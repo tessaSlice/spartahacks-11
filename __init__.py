@@ -15,6 +15,10 @@ from flask import Flask, jsonify, request
 from google import genai
 from pydantic import BaseModel
 from typing import List
+import os
+from dotenv import load_dotenv
+load_dotenv()
+API_KEY = os.getenv("API_KEY")
 
 # TODO: consider adding more attributes if requested
 class ToDoList(BaseModel):
@@ -51,7 +55,6 @@ def get_todos():
     
     # process messages and output it, for the time being just return the list of messages that are relevant
     # TODO: create new API key through GEMINI studio
-    API_KEY = ""
     client = genai.Client(api_key=API_KEY)
     response = ""
 
