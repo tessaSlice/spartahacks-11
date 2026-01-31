@@ -14,133 +14,141 @@ from googleapiclient.errors import HttpError
 # Delete events
 
 # If modifying these scopes, delete the file token.json.
-# SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
 
-def main():
-  # verify credentials
-  # they are created during the first authentication pass through
-  creds = None
-  if os.path.exists("token.json"):
-    creds = Credentials.from_authorized_user_file("token.json", SCOPES)
-  # If there are no (valid) credentials available, let the user log in.
-  if not creds or not creds.valid:
-    if creds and creds.expired and creds.refresh_token:
-      creds.refresh(Request())
+def get_calendar_service():
+    """Shows basic usage of the Google Calendar API.
+    Returns the service object.
+    """
+    creds = None
+    # The file token.json stores the user's access and refresh tokens, and is
+    # created automatically when the authorization flow completes for the first
+    # time.
+    if os.path.exists("token.json"):
+        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+    # If there are no (valid) credentials available, let the user log in.
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(
+                "API work/credentials.json", SCOPES
+            )
+            creds = flow.run_local_server(port=0)
+        # Save the credentials for the next run
+        with open("token.json", "w") as token:
+            token.write(creds.to_json())
+
+    try:
+        service = build("calendar", "v3", credentials=creds)
+        return service
+    except HttpError as error:
+        print(f"An error occurred: {error}")
+        return None
+
+
+def define_event_alternation(current_event, new_event_data):
+    """
+    Defines an alternation of a calendar event (CRUD format).
+    
+    Scenarios:
+    1. nil -> x (Create): current_event is None, new_event_data is valid.
+    2. x -> y (Update): current_event is valid, new_event_data is valid.
+    3. x -> nil (Delete): current_event is valid, new_event_data is None.
+    
+    Args:
+        current_event (dict): The existing event object (or None).
+        new_event_data (dict): The desired event data (or None).
+        
+    Returns:
+        dict: A dictionary containing the 'action' and necessary data/ID.
+        Returns None if no action is required (nil -> nil).
+    """
+    if current_event is None and new_event_data is not None:
+        # Create (nil -> x)
+        return {"action": "create", "body": new_event_data}
+    
+    elif current_event is not None and new_event_data is not None:
+        # Update (x -> y)
+        # We need the ID from current_event to update it
+        return {"action": "update", "id": current_event['id'], "body": new_event_data}
+        
+    elif current_event is not None and new_event_data is None:
+        # Delete (x -> nil)
+        return {"action": "delete", "id": current_event['id']}
+        
     else:
-      flow = InstalledAppFlow.from_client_secrets_file(
-          "credentials.json", SCOPES
-      )
-      creds = flow.run_local_server(port=0)
-    # Save the credentials for the next run
-    with open("token.json", "w") as token:
-      token.write(creds.to_json())
+        # nil -> nil (No-op)
+        return None
 
-  # calendar functions
-  try:
-    service = build("calendar", "v3", credentials=creds)
 
-    # Call the Calendar API (service is the calendar service)
-    now = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()  # get the current day
-    print("Getting the upcoming 10 events")
+def execute_event_alternation(service, alternation_def):
+    """
+    Executes the creation, update, or deletion of an event based on the definition.
+    
+    Args:
+        service: The authenticated Google Calendar service instance.
+        alternation_def (dict): The output from define_event_alternation.
+        
+    Returns:
+        The result of the API call (event object for create/update, empty for delete),
+        or None if no action was taken.
+    """
+    if not alternation_def:
+        return None
+        
+    action = alternation_def.get("action")
+    
+    if action == "create":
+        print(f"Creating event: {alternation_def['body'].get('summary', 'Unknown')}")
+        return service.events().insert(calendarId='primary', body=alternation_def['body']).execute()
+        
+    elif action == "update":
+        print(f"Updating event ID: {alternation_def['id']}")
+        return service.events().patch(
+            calendarId='primary', 
+            eventId=alternation_def['id'], 
+            body=alternation_def['body']
+        ).execute()
+        
+    elif action == "delete":
+        print(f"Deleting event ID: {alternation_def['id']}")
+        service.events().delete(calendarId='primary', eventId=alternation_def['id']).execute()
+        return {"id": alternation_def['id'], "status": "deleted"}
+        
+    return None
+
+
+def get_events_in_range(service, time_min, time_max):
+    """
+    Returns a list of events within the specified time range.
+    
+    Args:
+        service: The authenticated Google Calendar service instance.
+        time_min (str or datetime): Start time (inclusive).
+        time_max (str or datetime): End time (inclusive).
+        
+    Returns:
+        list: List of event objects.
+    """
+    # Convert datetime objects to ISO format string if needed
+    if isinstance(time_min, datetime.datetime):
+        time_min = time_min.isoformat()
+    if isinstance(time_max, datetime.datetime):
+        time_max = time_max.isoformat()
+        
+    print(f"Fetching events from {time_min} to {time_max}")
     
     events_result = (
         service.events()
         .list(
             calendarId="primary",
-            timeMin=now,
-            maxResults=10,
+            timeMin=time_min,
+            timeMax=time_max,
             singleEvents=True,
             orderBy="startTime",
         )
         .execute()
     )
-    events = events_result.get("items", [])
-
-    if not events:
-      print("No upcoming events found.")
-      return
-
-    # Prints the start and name of the next 10 events
-    for event in events:
-      start = event["start"].get("dateTime", event["start"].get("date"))
-      print(start, event["summary"])
-      
-    # create event
-    # event = {
-    #   'summary': 'Home',
-    #   'location': '1760 Broadway St., Ann Arbor, MI 48105',
-    #   'description': 'Cry in the corner',
-    #   'start': {
-    #     'dateTime': '2026-02-14T09:00:00-07:00',
-    #     'timeZone': 'America/New_York',
-    #   },
-    #   'end': {
-    #     'dateTime': '2026-02-14T17:00:00-07:00',
-    #     'timeZone': 'America/New_York',
-    #   },
-    #   'recurrence': [
-    #     'RRULE:FREQ=DAILY;COUNT=2'
-    #   ],
-    #   'reminders': {
-    #     'useDefault': False,
-    #     'overrides': [
-    #       {'method': 'email', 'minutes': 24 * 60},
-    #       {'method': 'popup', 'minutes': 10},
-    #     ],
-    #   },
-    # }
-    # event = service.events().insert(calendarId='primary', body=event).execute()
-    # print('Event created: %s' % (event.get('htmlLink')))
-    
-    # 'service' is an authorized Google Calendar API service instance
-    events_result = service.events().list(calendarId='primary', timeMin=now, maxResults=20, singleEvents=True,
-            orderBy="startTime",).execute()
-    events = events_result.get('items', [])
-
-    print(f'event size {len(events)}')
-
-    if not events:
-        print(f'No upcoming events found.')
-    for event in events:
-      # Print the event ID
-      print(f"Summary: {event['summary']}\n Start Date: {event['start']} Event ID: {event['id']}\n")
-    
-    # EVENT_ID = events[0]['id']
-    # CALENDAR_ID = 'primary'
-    # TIMEZONE = "America/New_York"  # Use an IANA time zone name (e.g., "America/Detroit")
-    # # print(f"{events[0]['summary']}")
-    # # Define the updates you want to make in a dictionary
-    # event_update_body = {
-    #     'summary': 'Happy Birthday!',
-    #   #   'location': 'New Address, New City',
-    #   #   'start': {
-    #   #   'dateTime': '2026-02-14T09:00:00-07:00',
-    #   #   'timeZone': 'America/New_York',
-    #   # },
-    #   # 'end': {
-    #   #   'dateTime': '2026-02-14T17:00:00-07:00',
-    #   #   'timeZone': 'America/New_York',
-    #   # },
-    # }
-
-    # # Call the events().patch() method
-    # updated_event = service.events().patch(
-    #     calendarId=CALENDAR_ID,
-    #     eventId=EVENT_ID,
-    #     body=event_update_body,
-    #     sendUpdates='all'  # Optional: determines if guests receive notifications ('all', 'externalOnly', or 'none')
-    # ).execute()
-    
-    # delete event
-    service.events().delete(calendarId='primary', eventId=events[0]['id']).execute()
-
-    # print(f"Event updated: {updated_event.get('htmlLink')}")
-
-  except HttpError as error:
-    print(f"An error occurred: {error}")
-
-
-if __name__ == "__main__":
-  main()
+    return events_result.get("items", [])

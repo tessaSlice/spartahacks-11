@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Action Approval Dashboard</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 min-h-screen p-8">
+    <div id="app" class="max-w-4xl mx-auto">
+        <header class="mb-8 flex justify-between items-center">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-800">Action Approval</h1>
+                <p class="text-gray-600">Review and execute proposed AI actions</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="relative flex h-3 w-3">
+                  <span v-if="polling" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  <span :class="polling ? 'bg-green-500' : 'bg-gray-400'" class="relative inline-flex rounded-full h-3 w-3"></span>
+                </span>
+                <span class="text-sm text-gray-500">${ polling ? 'Live' : 'Paused' }</span>
+            </div>
+        </header>
+
+        <div v-if="actions.length === 0" class="text-center py-12 bg-white rounded-lg shadow">
+            <i class="fas fa-robot text-4xl text-gray-300 mb-4"></i>
+            <p class="text-gray-500">No proposed actions waiting for approval.</p>
+        </div>
+
+        <div v-else class="space-y-6">
+            <div v-for="action in actions" :key="action.uuid" class="bg-white rounded-lg shadow overflow-hidden border-l-4" 
+                 :class="{
+                    'border-green-500': action.data.action === 'create',
+                    'border-blue-500': action.data.action === 'update',
+                    'border-red-500': action.data.action === 'delete'
+                 }">
+                
+                <!-- Header -->
+                <div class="p-4 border-b flex justify-between items-center bg-gray-50">
+                    <div class="flex items-center gap-3">
+                        <span class="px-2 py-1 text-xs font-bold uppercase rounded"
+                              :class="{
+                                'bg-green-100 text-green-800': action.data.action === 'create',
+                                'bg-blue-100 text-blue-800': action.data.action === 'update',
+                                'bg-red-100 text-red-800': action.data.action === 'delete'
+                              }">
+                            ${ action.data.action }
+                        </span>
+                        <span class="text-sm text-gray-500 font-mono">${ action.uuid }</span>
+                    </div>
+                    <button @click="deleteAction(action.uuid)" class="text-gray-400 hover:text-red-500 transition">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+
+                <!-- Body -->
+                <div class="p-4">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Action Data</label>
+                        <textarea 
+                            v-model="action.jsonString" 
+                            @input="updateJson(action)"
+                            class="w-full h-48 font-mono text-sm p-3 border rounded bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                            :class="{'border-red-300': action.jsonError}"></textarea>
+                        <p v-if="action.jsonError" class="text-red-500 text-xs mt-1">${ action.jsonError }</p>
+                    </div>
+
+                    <div class="flex justify-end gap-3">
+                        <button @click="executeAction(action)" 
+                                :disabled="!!action.jsonError || action.executing"
+                                class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition">
+                            <i v-if="action.executing" class="fas fa-circle-notch fa-spin"></i>
+                            <i v-else class="fas fa-play"></i>
+                            Execute
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue
+
+        createApp({
+            delimiters: ['${', '}'],
+            data() {
+                return {
+                    actions: [],
+                    polling: true,
+                    pollInterval: null
+                }
+            },
+            mounted() {
+                this.fetchActions()
+                this.pollInterval = setInterval(this.fetchActions, 2000)
+            },
+            methods: {
+                async fetchActions() {
+                    if (!this.polling) return;
+                    try {
+                        const res = await fetch('/actions');
+                        const data = await res.json();
+                        
+                        // Merge strategies to avoid overwriting local edits if possible, 
+                        // but for simplicity we'll just update if the list length changes or we don't have it.
+                        // A better way is to track by ID.
+                        
+                        const newActionsMap = new Map(data.map(a => [a.uuid, a]));
+                        
+                        // Remove actions that no longer exist
+                        this.actions = this.actions.filter(a => newActionsMap.has(a.uuid));
+
+                        // Add new actions
+                        for (const [uuid, serverAction] of newActionsMap) {
+                            const existing = this.actions.find(a => a.uuid === uuid);
+                            if (!existing) {
+                                this.actions.push({
+                                    ...serverAction,
+                                    jsonString: JSON.stringify(serverAction.data, null, 2),
+                                    jsonError: null,
+                                    executing: false
+                                });
+                            }
+                        }
+                    } catch (e) {
+                        console.error("Failed to fetch actions", e);
+                    }
+                },
+                updateJson(action) {
+                    try {
+                        const parsed = JSON.parse(action.jsonString);
+                        action.data = parsed;
+                        action.jsonError = null;
+                        // Optimistically update server? Or wait for execute?
+                        // Let's update server on blur or debounce, but for now we just keep local state
+                        // and send the updated JSON on execute.
+                        this.saveAction(action);
+                    } catch (e) {
+                        action.jsonError = e.message;
+                    }
+                },
+                async saveAction(action) {
+                    if (action.jsonError) return;
+                    try {
+                        await fetch(`/actions/${action.uuid}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ data: action.data })
+                        });
+                    } catch (e) {
+                        console.error("Failed to save", e);
+                    }
+                },
+                async deleteAction(uuid) {
+                    if (!confirm('Are you sure you want to dismiss this action?')) return;
+                    try {
+                        await fetch(`/actions/${uuid}`, { method: 'DELETE' });
+                        this.actions = this.actions.filter(a => a.uuid !== uuid);
+                    } catch (e) {
+                        console.error("Failed to delete", e);
+                    }
+                },
+                async executeAction(action) {
+                    if (action.jsonError) return;
+                    action.executing = true;
+                    try {
+                        const res = await fetch(`/actions/${action.uuid}/execute`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ data: action.data }) // Send latest data
+                        });
+                        const result = await res.json();
+                        if (result.status === 'success') {
+                            // Remove from list on success
+                            this.actions = this.actions.filter(a => a.uuid !== action.uuid);
+                            alert('Action executed successfully!');
+                        } else {
+                            alert('Error executing action: ' + result.message);
+                        }
+                    } catch (e) {
+                        console.error("Failed to execute", e);
+                        alert('Failed to execute action');
+                    } finally {
+                        action.executing = false;
+                    }
+                }
+            }
+        }).mount('#app')
+    </script>
+</body>
+</html>
