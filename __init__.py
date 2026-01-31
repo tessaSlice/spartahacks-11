@@ -1,10 +1,7 @@
 # receive POST request, parse it, output to agentic AI model that will run TODOs
+# Hosting on DigitalOcean would work but it costs money. At the very minimum it would cost $5/month as of the time of writing: https://www.digitalocean.com/community/tutorials/how-to-deploy-a-flask-app-using-gunicorn-to-app-platform
 
 """
-TODO:
-1. Host it locally on Flask to confirm the POST request works, output the TODO requests (but in reality we just want to call whatever function that the agentic AI model performs)
-2. Figure out how to host it on DigitalOcean with a tutorial located here: https://www.digitalocean.com/community/tutorials/how-to-deploy-a-flask-app-using-gunicorn-to-app-platform (consider using ngrok if digitalocean doesn't end up working out)
-
 parse post request, which is structured like so: 
 "session_id": string
 "attention_indices": array of ints
@@ -20,6 +17,9 @@ from dotenv import load_dotenv
 load_dotenv()
 API_KEY = os.getenv("API_KEY")
 
+# create a Flask server
+app = Flask(__name__)
+
 # TODO: consider adding more attributes if requested
 class ToDoList(BaseModel):
     todo_items: List[str]
@@ -27,12 +27,11 @@ class ToDoList(BaseModel):
 def set_error(context, error_message):
     context["Status"] = 400
     context["Error"] = error_message
+    print(f"Error occurred, error message is: {error_message}")
 
-# create a Flask server
-app = Flask(__name__)
-
-@app.route('/GetTodos', methods=["POST"])
+@app.route('/GetTodos', methods=["GET", "POST"])
 def get_todos():
+    print("Received request")
     data = request.get_json(force=False, silent=False)
     context = {
         "Status": 200,
@@ -55,35 +54,38 @@ def get_todos():
     
     # process messages and output it, for the time being just return the list of messages that are relevant
     # TODO: create new API key through GEMINI studio
-    client = genai.Client(api_key=API_KEY)
-    response = ""
-
-    # NOTE: we use structured outputs. Docs: https://ai.google.dev/gemini-api/docs/structured-output?example=recipe
-    try:
-        highlighted_messages = [messages[index] for index in indices]
-        bulleted_list = '\n'.join(["- " + substr for substr in highlighted_messages])
-        prompt = f"Based on the bullet points I've provided below, construct a TODO list: \n{bulleted_list}"
-        response = client.models.generate_content(
-            # TODO: choose a model
-            model="gemini-2.0-flash",
-            contents=prompt,
-            config={
-                "response_mime_type": "application/json",
-                "response_json_schema": ToDoList.model_json_schema(),
-            },
-        )
-    except Exception as e:
-        set_error("Gemini error, likely the token limits have been exceeded")
-        return jsonify(**context)
-    if not response:
-        set_error("No response received from Gemini")
-        return jsonify(**context)
+    # client = genai.Client(api_key=API_KEY)
+    # response = ""
+    # # NOTE: we use structured outputs. Docs: https://ai.google.dev/gemini-api/docs/structured-output?example=recipe
+    # try:
+    #     highlighted_messages = [messages[index] for index in indices]
+    #     bulleted_list = '\n'.join(["- " + substr for substr in highlighted_messages])
+    #     prompt = f"Based on the bullet points I've provided below, construct a TODO list: \n{bulleted_list}"
+    #     response = client.models.generate_content(
+    #         # TODO: choose a model
+    #         model="gemini-2.0-flash",
+    #         contents=prompt,
+    #         config={
+    #             "response_mime_type": "application/json",
+    #             "response_json_schema": ToDoList.model_json_schema(),
+    #         },
+    #     )
+    # except Exception as e:
+    #     set_error("Gemini error, likely the token limits have been exceeded")
+    #     return jsonify(**context)
+    # if not response:
+    #     set_error("No response received from Gemini")
+    #     return jsonify(**context)
 
     # TODO: do something with the formatted response output (that is a dictionary)
     # todo_items is just a list of strings
-    todo_items = response['todo_items']
+    # todo_items = response['todo_items']
 
     # TODO: do something with the todo items with the agent
+    todo_items = ["temporary", "fix", "this"]
     context["Todos"] = todo_items
 
     return jsonify(**context)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080, debug=True)
