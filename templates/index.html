@@ -42,6 +42,13 @@
                     'border-purple-500': action.data.action === 'send_email'
                  }">
                 
+                <div v-if="action.confirmed" class="p-12 text-center bg-green-50 text-green-700 transition-all duration-500 ease-in-out">
+                    <i class="fas fa-check-circle text-5xl mb-4"></i>
+                    <h3 class="text-xl font-bold">Action Executed</h3>
+                    <p class="text-sm opacity-80">Dismissing...</p>
+                </div>
+
+                <div v-else>
                 <!-- Header -->
                 <div class="p-4 border-b flex justify-between items-center bg-gray-50">
                     <div class="flex items-center gap-3">
@@ -245,6 +252,7 @@
                         </button>
                     </div>
                 </div>
+                </div>
             </div>
         </div>
     </div>
@@ -346,8 +354,10 @@
                         
                         if (result.status === 'success') {
                             action.executionResult = result.result;
-                            // alert('Action executed successfully!'); // Less intrusive
-                            this.polling = false; 
+                            action.confirmed = true;
+                            setTimeout(() => {
+                                this.actions = this.actions.filter(a => a.uuid !== action.uuid);
+                            }, 2000);
                         } else {
                             alert('Error executing action: ' + result.message);
                         }
