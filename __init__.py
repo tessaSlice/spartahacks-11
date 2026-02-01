@@ -10,8 +10,8 @@ parse post request, which is structured like so:
 
 from flask import Flask, jsonify, request, render_template
 from google import genai
-from pydantic import BaseModel
-from typing import List, Dict, Any
+from pydantic import BaseModel, Field
+from typing import List, Dict, Any, Optional
 import os
 import sys
 import uuid
@@ -38,6 +38,76 @@ PROPOSED_ACTIONS: Dict[str, Any] = {}
 calendar_service = gcal.get_calendar_service()
 gmail_service = gmail.get_services()
 people_service = gpeople.get_services()
+
+# --- Structured Inputs (Pydantic Models) ---
+
+class CreateCalendarEventInput(BaseModel):
+    summary: str = Field(description="The title of the event")
+    start_time: str = Field(description="Start time in ISO 8601 format (YYYY-MM-DDTHH:MM:SS)")
+    end_time: str = Field(description="End time in ISO 8601 format (YYYY-MM-DDTHH:MM:SS)")
+    location: Optional[str] = Field(default=None, description="Location of the event")
+    description: Optional[str] = Field(default=None, description="Description of the event")
+    attendees: Optional[List[str]] = Field(default=None, description="List of attendee email addresses")
+
+class UpdateCalendarEventInput(BaseModel):
+    event_id: str = Field(description="The ID of the event to update")
+    summary: Optional[str] = Field(default=None, description="The new title of the event")
+    start_time: Optional[str] = Field(default=None, description="New start time in ISO 8601 format")
+    end_time: Optional[str] = Field(default=None, description="New end time in ISO 8601 format")
+    location: Optional[str] = Field(default=None, description="New location")
+    description: Optional[str] = Field(default=None, description="New description")
+    attendees: Optional[List[str]] = Field(default=None, description="New list of attendee email addresses")
+
+class DeleteCalendarEventInput(BaseModel):
+    event_id: str = Field(description="The ID of the event to delete")
+
+class SendEmailInput(BaseModel):
+    recipient: str = Field(description="Email address of the recipient")
+    subject: str = Field(description="Subject of the email")
+    body: str = Field(description="Body content of the email")
+
+# --- Tool Wrappers ---
+
+def create_calendar_event_tool(summary: str, start_time: str, end_time: str, location: str = None, description: str = None, attendees: list[str] = None):
+    """
+    Propose creating a calendar event.
+    """
+    body = {
+        "summary": summary,
+        "start": {"dateTime": start_time},
+        "end": {"dateTime": end_time},
+    }
+    if location: body["location"] = location
+    if description: body["description"] = description
+    if attendees: body["attendees"] = [{"email": email} for email in attendees]
+    
+    return gcal.propose_create_event(body)
+
+def update_calendar_event_tool(event_id: str, summary: str = None, start_time: str = None, end_time: str = None, location: str = None, description: str = None, attendees: list[str] = None):
+    """
+    Propose updating a calendar event.
+    """
+    body = {}
+    if summary: body["summary"] = summary
+    if start_time: body["start"] = {"dateTime": start_time}
+    if end_time: body["end"] = {"dateTime": end_time}
+    if location: body["location"] = location
+    if description: body["description"] = description
+    if attendees: body["attendees"] = [{"email": email} for email in attendees]
+    
+    return gcal.propose_update_event(calendar_service, event_id, body)
+
+def delete_calendar_event_tool(event_id: str):
+    """
+    Propose deleting a calendar event.
+    """
+    return gcal.propose_delete_event(calendar_service, event_id)
+
+def send_email_tool(recipient: str, subject: str, body: str):
+    """
+    Propose sending an email.
+    """
+    return gmail.propose_send_email(recipient, subject, body)
 
 # TODO: consider adding more attributes if requested
 class ToDoList(BaseModel):
@@ -152,8 +222,6 @@ def get_todos():
     context = {
         "Status": 200,
         "Error": "",
-        # list of strings
-        "Todos": []
     }
 
     # process the POST request data
@@ -169,37 +237,64 @@ def get_todos():
         return jsonify(**context)
     
     # process messages and output it, for the time being just return the list of messages that are relevant
-    # TODO: create new API key through GEMINI studio
-    # client = genai.Client(api_key=API_KEY)
-    # response = ""
-    # # NOTE: we use structured outputs. Docs: https://ai.google.dev/gemini-api/docs/structured-output?example=recipe
-    # try:
-    #     highlighted_messages = [messages[index] for index in indices]
-    #     bulleted_list = '\n'.join(["- " + substr for substr in highlighted_messages])
-    #     prompt = f"Based on the bullet points I've provided below, construct a TODO list: \n{bulleted_list}"
-    #     response = client.models.generate_content(
-    #         # TODO: choose a model
-    #         model="gemini-2.0-flash",
-    #         contents=prompt,
-    #         config={
-    #             "response_mime_type": "application/json",
-    #             "response_json_schema": ToDoList.model_json_schema(),
-    #         },
-    #     )
-    # except Exception as e:
-    #     set_error("Gemini error, likely the token limits have been exceeded")
-    #     return jsonify(**context)
-    # if not response:
-    #     set_error("No response received from Gemini")
-    #     return jsonify(**context)
+    client = genai.Client(api_key=API_KEY)
+    
+    tools = [
+        create_calendar_event_tool,
+        update_calendar_event_tool,
+        delete_calendar_event_tool,
+        send_email_tool
+    ]
 
-    # TODO: do something with the formatted response output (that is a dictionary)
-    # todo_items is just a list of strings
-    # todo_items = response['todo_items']
+    try:
+        highlighted_messages = [messages[index] for index in indices]
+        context_text = "Conversation context:\n" + '\n'.join([f"- {msg.get('content', '')}" for msg in highlighted_messages])
+        
+        prompt = '''
+        You are a helpful assistant that can 
+        - create, update, delete calendar events
+        - send emails
+        You are given a conversation context and a list of attention indices.
+        You need to create a list of proposed actions based on the conversation context and the attention indices.
+        The attention indices are the indices where a user indicated that the conversation context around that index is relevant to the user's needs.
+        
+        Solve the user's problems, outputting only the following tool calls:
+        - create_calendar_event_tool
+        - update_calendar_event_tool
+        - delete_calendar_event_tool
+        - send_email_tool
+        The tool calls are to be returned in the form of a list of dictionaries.
+        '''
 
-    # TODO: do something with the todo items with the agent
-    todo_items = ["temporary", "fix", "this"]
-    context["Todos"] = todo_items
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=context_text,
+            tools=tools,
+            config={"tool_config": {"function_calling_config": {"mode": "AUTO"}}}
+        )
+
+        proposed_actions = []
+        
+        # Handle tool calls
+        if response.function_calls:
+            for call in response.function_calls:
+                tool_map = {
+                    "create_calendar_event_tool": create_calendar_event_tool,
+                    "update_calendar_event_tool": update_calendar_event_tool,
+                    "delete_calendar_event_tool": delete_calendar_event_tool,
+                    "send_email_tool": send_email_tool
+                }
+                
+                func = tool_map.get(call.name)
+                if func:
+                    # Execute the wrapper to get the proposal
+                    proposal = func(**call.args)
+                    proposed_actions.append(proposal)
+
+
+    except Exception as e:
+        set_error(context, f"Gemini error: {e}")
+        return jsonify(**context)
 
     return jsonify(**context)
 
