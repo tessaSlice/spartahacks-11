@@ -6,6 +6,9 @@ url = "http://localhost:8080/GetTodos"
 payload = {
   "attention_indices" : [
     4,
+    8,
+    10,
+    12,
   ],
   "session_id" : "8109B5DA-6621-4ECE-9CBD-81189FD64A4C",
   "messages" : [
@@ -47,6 +50,34 @@ payload = {
     },
     {
       "content" : "Actually no, I remember. He needs to come over to my house.",
+      "speaker" : 2
+    },
+    {
+      "content" : "Attention",
+      "speaker" : 0
+    },
+    {
+      "content" : "Create a Jira issue for the thing.",
+      "speaker" : 2
+    },
+    {
+      "content" : "Attention",
+      "speaker" : 0
+    },
+    {
+      "content" : "Send a Slack message to the team about the thing.",
+      "speaker" : 2
+    },
+    {
+      "content" : "Wait, we're not talking about the same thing right?.",
+      "speaker" : 2
+    },
+    {
+      "content" : "Yeah, no, the new thing we're talking about is the critical race condition we're seeing in the code.",
+      "speaker" : 1
+    },
+    {
+      "content" : "Yeah add a new task to the Jira issue for the race condition and then send a Slack message to the team about that.",
       "speaker" : 2
     }
   ]

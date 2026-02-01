@@ -17,7 +17,7 @@ import os
 import uuid
 import datetime
 from dotenv import load_dotenv
-from ApiWork import gcal, gmail, gpeople
+from ApiWork import gcal, gmail, gpeople, jira_slack
 
 load_dotenv(override=True)
 API_KEY = os.getenv("API_KEY")
@@ -33,7 +33,8 @@ PROPOSED_ACTIONS: Dict[str, Any] = {}
 calendar_service = gcal.get_calendar_service()
 gmail_service = gmail.get_services()
 people_service = gpeople.get_services()
-
+jira_client = jira_slack.get_jira_client()
+slack_client = jira_slack.get_slack_client()
 # --- Structured Inputs (Pydantic Models) ---
 
 class CreateCalendarEventInput(BaseModel):
@@ -60,6 +61,15 @@ class SendEmailInput(BaseModel):
     recipient: str = Field(description="Email address of the recipient")
     subject: str = Field(description="Subject of the email")
     body: str = Field(description="Body content of the email")
+
+class CreateJiraIssueInput(BaseModel):
+    summary: str = Field(description="Summary of the issue")
+    description: str = Field(description="Description of the issue")
+
+class UpdateJiraIssueInput(BaseModel):
+    issue_id: str = Field(description="The ID of the issue to update")
+    summary: Optional[str] = Field(default=None, description="The new summary of the issue")
+    description: Optional[str] = Field(default=None, description="The new description of the issue")
 
 # --- Tool Wrappers ---
 
@@ -122,9 +132,17 @@ def send_email_tool(recipient: str, subject: str, body: str):
     """
     return gmail.propose_send_email(recipient, subject, body)
 
-# TODO: consider adding more attributes if requested
-class ToDoList(BaseModel):
-    todo_items: List[str]
+def create_jira_issue_tool(summary: str, description: str):
+    """
+    Propose creating a Jira issue.
+    """
+    return jira_slack.propose_create_jira_issue(summary, description)
+
+def send_slack_message_tool(message: str):
+    """
+    Propose sending a Slack message.
+    """
+    return jira_slack.propose_send_slack_message(message)
 
 def set_error(context, error_message):
     context["Status"] = 400
@@ -218,6 +236,14 @@ def execute_action(action_id):
             email_body = action_data.get('body')
             result = gmail.execute_send_email(gmail_service, email_body)
         
+        elif action_type == 'create_jira_issue':
+            print(f"Executing Jira action {action_id}: {action_data}")
+            result = jira_slack.execute_create_jira_issue(jira_client, action_data)
+
+        elif action_type == 'send_slack_message':
+            print(f"Executing Slack action {action_id}: {action_data}")
+            result = jira_slack.execute_send_slack_message(slack_client, action_data)
+
         else:
             return jsonify({"error": f"Unknown action type: {action_type}"}), 400
 
@@ -261,8 +287,11 @@ def process_attention_item(client, tools, transcript_text, index, target_message
     - update_calendar_event_tool
     - delete_calendar_event_tool
     - send_email_tool
+    - create_jira_issue_tool
+    - send_slack_message_tool
     
     CRITICAL: You MUST propose at least one action for this attention item.
+
     If you are missing information (like an email address), SEARCH for it using get_contacts_tool or read_emails_tool.
     If you still cannot find it after searching, use a placeholder like 'INSERT_EMAIL_HERE' or 'TBD' and PROPOSE THE ACTION ANYWAY.
     DO NOT stop to ask the user for information.
@@ -306,7 +335,9 @@ def process_attention_item(client, tools, transcript_text, index, target_message
                 "create_calendar_event_tool": create_calendar_event_tool,
                 "update_calendar_event_tool": update_calendar_event_tool,
                 "delete_calendar_event_tool": delete_calendar_event_tool,
-                "send_email_tool": send_email_tool
+                "send_email_tool": send_email_tool,
+                "create_jira_issue_tool": create_jira_issue_tool,
+                "send_slack_message_tool": send_slack_message_tool
             }
             
             func = tool_map.get(call.name)
@@ -317,7 +348,7 @@ def process_attention_item(client, tools, transcript_text, index, target_message
                     result = func(**call.args)
                     
                     # If it's a proposal tool, register the action
-                    if call.name in ["create_calendar_event_tool", "update_calendar_event_tool", "delete_calendar_event_tool", "send_email_tool"]:
+                    if call.name in ["create_calendar_event_tool", "update_calendar_event_tool", "delete_calendar_event_tool", "send_email_tool", "create_jira_issue_tool", "send_slack_message_tool"]:
                         action_obj = add_proposed_action(result)
                         proposed_actions.append(action_obj)
                         # Return the action object (or just the result) to the model
@@ -372,6 +403,7 @@ def get_todos():
     messages = data['messages']
 
     if not indices or not messages or indices[-1] >= len(messages):
+        print(indices, messages)
         set_error(context, "Messages or indices contain invalid content")
         return jsonify(**context)
     
@@ -385,7 +417,9 @@ def get_todos():
         create_calendar_event_tool,
         update_calendar_event_tool,
         delete_calendar_event_tool,
-        send_email_tool
+        send_email_tool,
+        create_jira_issue_tool,
+        send_slack_message_tool
     ]
     
     # Full transcript context

@@ -42,7 +42,9 @@
                     'border-green-500': action.data.action === 'create',
                     'border-blue-500': action.data.action === 'update',
                     'border-red-500': action.data.action === 'delete',
-                    'border-purple-500': action.data.action === 'send_email'
+                    'border-purple-500': action.data.action === 'send_email',
+                    'border-orange-500': action.data.action === 'create_jira_issue',
+                    'border-teal-500': action.data.action === 'send_slack_message'
                  }">
                 
                 <div v-if="action.confirmed" class="p-12 text-center bg-green-50 text-green-700 transition-all duration-500 ease-in-out">
@@ -60,7 +62,9 @@
                                 'bg-green-100 text-green-800': action.data.action === 'create',
                                 'bg-blue-100 text-blue-800': action.data.action === 'update',
                                 'bg-red-100 text-red-800': action.data.action === 'delete',
-                                'bg-purple-100 text-purple-800': action.data.action === 'send_email'
+                                'bg-purple-100 text-purple-800': action.data.action === 'send_email',
+                                'bg-orange-100 text-orange-800': action.data.action === 'create_jira_issue',
+                                'bg-teal-100 text-teal-800': action.data.action === 'send_slack_message'
                               }">
                             ${ action.data.action.replace('_', ' ') }
                         </span>
@@ -229,6 +233,39 @@
                                 </div>
                             </div>
                             
+                            <!-- JIRA FORM -->
+                            <div v-else-if="action.data.action === 'create_jira_issue'" class="bg-white border rounded-lg p-4 shadow-sm">
+                                <div class="space-y-4">
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-500 mb-1">Summary</label>
+                                        <input type="text" 
+                                               v-model="action.data.body.summary" 
+                                               @input="updateFromUi(action)"
+                                               class="w-full p-2 border rounded font-medium focus:ring-2 focus:ring-orange-500 outline-none">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-500 mb-1">Description</label>
+                                        <textarea v-model="action.data.body.description" 
+                                                  @input="updateFromUi(action)"
+                                                  rows="4"
+                                                  class="w-full p-3 border rounded text-sm focus:ring-2 focus:ring-orange-500 outline-none whitespace-pre-wrap font-sans"></textarea>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- SLACK FORM -->
+                            <div v-else-if="action.data.action === 'send_slack_message'" class="bg-white border rounded-lg p-4 shadow-sm">
+                                <div class="space-y-4">
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-500 mb-1">Message</label>
+                                        <textarea v-model="action.data.body.message" 
+                                                  @input="updateFromUi(action)"
+                                                  rows="4"
+                                                  class="w-full p-3 border rounded text-sm focus:ring-2 focus:ring-teal-500 outline-none whitespace-pre-wrap font-sans"></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <!-- Fallback for unknown types -->
                              <div v-else class="p-4 bg-yellow-50 text-yellow-800 rounded border border-yellow-200">
                                 Unknown action type. Please use "Show JSON" to edit.
@@ -251,7 +288,9 @@
                                 class="px-6 py-2 bg-blue-600 text-white font-medium rounded shadow-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition transform active:scale-95">
                             <i v-if="action.executing" class="fas fa-circle-notch fa-spin"></i>
                             <i v-else class="fas fa-paper-plane"></i>
-                            ${ action.data.action === 'send_email' ? 'Send Email' : 'Confirm Action' }
+                            ${ action.data.action === 'send_email' ? 'Send Email' : 
+                               action.data.action === 'create_jira_issue' ? 'Create Issue' :
+                               action.data.action === 'send_slack_message' ? 'Send Message' : 'Confirm Action' }
                         </button>
                     </div>
                 </div>
