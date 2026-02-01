@@ -38,108 +38,41 @@ def get_calendar_service():
         print(f"An error occurred: {error}")
         return None
 
+def create_event(service, event_body):
+    """Creates a new calendar event."""
+    print(f"Creating event: {event_body.get('summary', 'Unknown')}")
+    return service.events().insert(calendarId='primary', body=event_body).execute()
 
-def define_event_alternation(current_event, new_event_data):
-    """
-    Defines an alternation of a calendar event (CRUD format).
-    
-    Scenarios:
-    1. nil -> x (Create): current_event is None, new_event_data is valid.
-    2. x -> y (Update): current_event is valid, new_event_data is valid.
-    3. x -> nil (Delete): current_event is valid, new_event_data is None.
-    
-    Args:
-        current_event (dict): The existing event object (or None).
-        new_event_data (dict): The desired event data (or None).
-        
-    Returns:
-        dict: A dictionary containing the 'action' and necessary data/ID.
-        Returns None if no action is required (nil -> nil).
-    """
-    if current_event is None and new_event_data is not None:
-        # Create (nil -> x)
-        return {"action": "create", "body": new_event_data}
-    
-    elif current_event is not None and new_event_data is not None:
-        # Update (x -> y)
-        # We need the ID from current_event to update it
-        return {"action": "update", "id": current_event['id'], "body": new_event_data}
-        
-    elif current_event is not None and new_event_data is None:
-        # Delete (x -> nil)
-        return {"action": "delete", "id": current_event['id']}
-        
-    else:
-        # nil -> nil (No-op)
-        return None
+def update_event(service, event_id, event_body):
+    """Updates an existing calendar event."""
+    print(f"Updating event ID: {event_id}")
+    return service.events().patch(
+        calendarId='primary', 
+        eventId=event_id, 
+        body=event_body
+    ).execute()
 
+def delete_event(service, event_id):
+    """Deletes a calendar event."""
+    print(f"Deleting event ID: {event_id}")
+    service.events().delete(calendarId='primary', eventId=event_id).execute()
+    return {"id": event_id, "status": "deleted"}
 
-def execute_event_alternation(service, alternation_def):
-    """
-    Executes the creation, update, or deletion of an event based on the definition.
-    
-    Args:
-        service: The authenticated Google Calendar service instance.
-        alternation_def (dict): The output from define_event_alternation.
-        
-    Returns:
-        The result of the API call (event object for create/update, empty for delete),
-        or None if no action was taken.
-    """
-    if not alternation_def:
-        return None
-        
-    action = alternation_def.get("action")
-    
-    if action == "create":
-        body = alternation_def.get('body')
-        print(f"Creating event: {body.get('summary', 'Unknown')}")
-
-        return service.events().insert(calendarId='primary', body=body).execute()
-        
-    elif action == "update":
-        body = alternation_def.get('body')
-        print(f"Updating event ID: {alternation_def['id']}")
-        
-        # Validate body (Update might be partial, but usually follows resource semantics)
-        # For patch, we might not need strict validation of all fields, but let's check basics if provided
-        if 'start' in body or 'end' in body:
-             # If one is provided, usually both should be checked or at least valid
-             pass
-
-        return service.events().patch(
-            calendarId='primary', 
-            eventId=alternation_def['id'], 
-            body=body
-        ).execute()
-        
-    elif action == "delete":
-        print(f"Deleting event ID: {alternation_def['id']}")
-        service.events().delete(calendarId='primary', eventId=alternation_def['id']).execute()
-        return {"id": alternation_def['id'], "status": "deleted"}
-        
-    return None
-
-
-def get_events_in_range(service, time_min, time_max):
+def list_events(service, time_min=None, time_max=None, max_results=10):
     """
     Returns a list of events within the specified time range.
-    
-    Args:
-        service: The authenticated Google Calendar service instance.
-        time_min (str or datetime): Start time (inclusive).
-        time_max (str or datetime): End time (inclusive).
-        
-    Returns:
-        list: List of event objects.
+    Defaults to upcoming 10 events if no range specified.
     """
+    if not time_min:
+        time_min = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
+    
     # Convert datetime objects to ISO format string if needed
     if isinstance(time_min, datetime.datetime):
         time_min = time_min.isoformat()
     if isinstance(time_max, datetime.datetime):
         time_max = time_max.isoformat()
         
-    print(f"Fetching events from {time_min} to {time_max}")
+    print(f"Fetching events from {time_min} to {time_max if time_max else 'Future'}")
     
     events_result = (
         service.events()
@@ -147,9 +80,33 @@ def get_events_in_range(service, time_min, time_max):
             calendarId="primary",
             timeMin=time_min,
             timeMax=time_max,
+            maxResults=max_results,
             singleEvents=True,
             orderBy="startTime",
         )
         .execute()
     )
     return events_result.get("items", [])
+
+def execute_action(service, action_data):
+    """
+    Dispatcher for calendar actions.
+    """
+    if not action_data:
+        return None
+        
+    action = action_data.get("action")
+    
+    if action == "create":
+        return create_event(service, action_data.get('body'))
+        
+    elif action == "update":
+        return update_event(service, action_data.get('id'), action_data.get('body'))
+        
+    elif action == "delete":
+        return delete_event(service, action_data.get('id'))
+        
+    return None
+
+# Alias for backward compatibility if needed, but we will update __init__.py
+execute_event_alternation = execute_action

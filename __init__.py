@@ -119,7 +119,7 @@ def execute_action(action_id):
         result = None
         if action_type in ['create', 'update', 'delete']:
             print(f"Executing Calendar action {action_id}: {action_data}")
-            result = gcal.execute_event_alternation(calendar_service, action_data)
+            result = gcal.execute_action(calendar_service, action_data)
         
         elif action_type == 'send_email':
             print(f"Executing Email action {action_id}: {action_data}")
