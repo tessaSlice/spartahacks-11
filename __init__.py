@@ -34,10 +34,10 @@ app = Flask(__name__)
 # Structure: { uuid: { uuid: str, data: dict, status: 'pending' } }
 PROPOSED_ACTIONS: Dict[str, Any] = {}
 
-# Initialize Calendar Service
-calendar_service = None
-if quickstart:
-    calendar_service = quickstart.get_calendar_service()
+# Initialize Services
+calendar_service = calendar.get_calendar_service()
+gmail_service = gmail.get_services()
+people_service = contacts.get_services()
 
 # TODO: consider adding more attributes if requested
 class ToDoList(BaseModel):
@@ -102,7 +102,7 @@ def delete_action(action_id):
 
 @app.route('/actions/<action_id>/execute', methods=['POST'])
 def execute_action(action_id):
-    """Execute the action using quickstart.py."""
+    """Execute the action."""
     if action_id not in PROPOSED_ACTIONS:
         return jsonify({"error": "Action not found"}), 404
     
@@ -112,13 +112,23 @@ def execute_action(action_id):
     if req_data and 'data' in req_data:
         action['data'] = req_data['data']
 
-    if not quickstart or not calendar_service:
-        return jsonify({"error": "Calendar service not available"}), 500
+    action_data = action['data']
+    action_type = action_data.get('action')
 
     try:
-        print(f"Executing action {action_id}: {action['data']}")
-        result = quickstart.execute_event_alternation(calendar_service, action['data'])
+        result = None
+        if action_type in ['create', 'update', 'delete']:
+            print(f"Executing Calendar action {action_id}: {action_data}")
+            result = calendar.execute_event_alternation(calendar_service, action_data)
         
+        elif action_type == 'send_email':
+            print(f"Executing Email action {action_id}: {action_data}")
+            # The body of the action contains the draft structure
+            result = gmail.send_email(gmail_service, action_data)
+        
+        else:
+            return jsonify({"error": f"Unknown action type: {action_type}"}), 400
+
         # Remove from pending list after successful execution
         del PROPOSED_ACTIONS[action_id]
         

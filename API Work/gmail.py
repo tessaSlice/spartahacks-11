@@ -15,7 +15,6 @@ SCOPES = [
 def get_services():
     """Returns the Gmail service."""
     creds = None
-    # The file token_gmail.json stores the user's access and refresh tokens for Gmail/People
     if os.path.exists("token.json"):
         creds = Credentials.from_authorized_user_file("token.json", SCOPES)
     # If there are no (valid) credentials available, let the user log in.
