@@ -25,7 +25,7 @@ payload = {
     },
     {
       "speaker" : 2,
-      "content" : "I don't think I've ever figured out how"
+      "content" : "Make a calendar event for a meeting with John Doe on April 1st at 10:00 AM"
     },
     {
       "content" : "Attention",

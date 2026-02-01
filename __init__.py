@@ -25,7 +25,7 @@ import gcal
 import gmail
 import gpeople
 
-load_dotenv()
+load_dotenv(override=True)
 API_KEY = os.getenv("API_KEY")
 
 # create a Flask server
@@ -240,18 +240,14 @@ def get_todos():
     # process messages and output it, for the time being just return the list of messages that are relevant
     client = genai.Client(api_key=API_KEY)
 
-    tools = types.Tool(function_declarations=[
+    tools = [
         create_calendar_event_tool,
         update_calendar_event_tool,
         delete_calendar_event_tool,
         send_email_tool
-    ])
-    config = types.GenerateContentConfig(tools=[tools])
+    ]
 
-    try:
-        highlighted_messages = [messages[index] for index in indices]
-        context_text = "Conversation context:\n" + '\n'.join([f"- {msg.get('content', '')}" for msg in highlighted_messages])
-        
+    try:        
         prompt = '''
         You are a helpful assistant that can 
         - create, update, delete calendar events
@@ -267,11 +263,24 @@ def get_todos():
         - send_email_tool
         The tool calls are to be returned in the form of a list of dictionaries.
         '''
+        context_text = "Conversation context:\n" + '\n'.join([f"- {msg.get('content', '')}" for msg in messages])
+
+        contents=[
+            prompt,
+            context_text
+        ]
 
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=context_text,
-            config=config,
+            model="gemini-2.5-flash",
+            contents=contents,
+            config=types.GenerateContentConfig(
+                tools=tools,
+                tool_config=types.ToolConfig(
+                    function_calling_config=types.FunctionCallingConfig(
+                        mode="AUTO"
+                    )
+                )
+            )
         )
 
         proposed_actions = []
