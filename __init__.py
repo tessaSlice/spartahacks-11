@@ -20,7 +20,9 @@ import datetime
 from dotenv import load_dotenv
 
 sys.path.append(os.path.abspath("API work"))
-import quickstart
+import calendar
+import gmail
+import contacts
 
 load_dotenv()
 API_KEY = os.getenv("API_KEY")

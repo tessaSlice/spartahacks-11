@@ -1,0 +1,123 @@
+import os.path
+import base64
+from email.message import EmailMessage
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+
+# Scopes for Gmail and People API
+SCOPES = [
+    "https://www.googleapis.com/auth/gmail.modify",
+]
+
+def get_services():
+    """Returns the Gmail service."""
+    creds = None
+    # The file token_gmail.json stores the user's access and refresh tokens for Gmail/People
+    if os.path.exists("token.json"):
+        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+    # If there are no (valid) credentials available, let the user log in.
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(
+                "API work/credentials.json", SCOPES
+            )
+            creds = flow.run_local_server(port=0)
+        # Save the credentials for the next run
+        with open("token.json", "w") as token:
+            token.write(creds.to_json())
+
+    try:
+        gmail_service = build("gmail", "v1", credentials=creds)
+        return gmail_service
+    except HttpError as error:
+        print(f"An error occurred: {error}")
+        return None
+
+def read_emails(gmail_service, query=None, max_results=10):
+    """
+    Reads a range of emails matching the query.
+    
+    Args:
+        gmail_service: Gmail service instance.
+        query (str): Search query (e.g., 'is:unread').
+        max_results (int): Max number of emails to return.
+        
+    Returns:
+        list: List of email dictionaries with id, subject, sender, snippet.
+    """
+    try:
+        results = service.users().messages().list(userId='me', q=query, maxResults=max_results).execute()
+        messages = results.get('messages', [])
+        
+        email_data = []
+        for msg in messages:
+            msg_detail = service.users().messages().get(userId='me', id=msg['id']).execute()
+            payload = msg_detail.get('payload', {})
+            headers = payload.get('headers', [])
+            
+            subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
+            sender = next((h['value'] for h in headers if h['name'] == 'From'), 'Unknown')
+            
+            snippet = msg_detail.get('snippet', '')
+            
+            email_data.append({
+                'id': msg['id'],
+                'subject': subject,
+                'sender': sender,
+                'snippet': snippet
+            })
+            
+        return email_data
+    except HttpError as error:
+        print(f"An error occurred reading emails: {error}")
+        return []
+
+def create_draft_structure(recipient, subject, body):
+    """
+    Creates a draft structure for the frontend/agent to review.
+    Returns a dict that can be passed to send_email.
+    """
+    return {
+        "recipient": recipient,
+        "subject": subject,
+        "body": body
+    }
+
+def send_email(service, draft_structure):
+    """
+    Sends an email based on the draft structure.
+    
+    Args:
+        service: Gmail service instance.
+        draft_structure (dict): Dictionary with recipient, subject, body.
+    """
+    try:
+        message = EmailMessage()
+        message.set_content(draft_structure['body'])
+        message['To'] = draft_structure['recipient']
+        message['Subject'] = draft_structure['subject']
+        
+        encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
+        
+        create_message = {
+            'raw': encoded_message
+        }
+        
+        send_message = (service.users().messages().send(userId="me", body=create_message).execute())
+        print(f"Message Id: {send_message['id']}")
+        return send_message
+    except HttpError as error:
+        print(f"An error occurred sending email: {error}")
+        return None
+
+if __name__ == "__main__":
+    gmail_service = get_services()
+    if gmail_service:
+        print("Gmail service authenticated.")
+        # Example usage:
+        # print("Recent Emails:", read_emails(gmail_service, max_results=3))
