@@ -125,6 +125,22 @@ def index():
 
 # --- Action Management Endpoints ---
 
+def add_proposed_action(data):
+    action_id = str(uuid.uuid4())
+    action_obj = {
+        "uuid": action_id,
+        "data": data,
+        "status": "pending",
+        "created_at": str(datetime.datetime.now()) if 'datetime' in globals() else None
+    }
+    
+    if data and 'original' in data:
+        action_obj['existing_data'] = data['original']
+
+    PROPOSED_ACTIONS[action_id] = action_obj
+    print(f"Action proposed: {action_id}")
+    return action_obj
+
 @app.route('/actions', methods=['GET'])
 def get_actions():
     """Get all pending actions."""
@@ -140,20 +156,8 @@ def create_action():
     if not data:
         return jsonify({"error": "No data provided"}), 400
     
-    action_id = str(uuid.uuid4())
-    action_obj = {
-        "uuid": action_id,
-        "data": data,
-        "status": "pending",
-        "created_at": str(datetime.datetime.now()) if 'datetime' in globals() else None
-    }
-    
-    if data and 'original' in data:
-        action_obj['existing_data'] = data['original']
-
-    PROPOSED_ACTIONS[action_id] = action_obj
-    print(f"Action proposed: {action_id}")
-    return jsonify({"uuid": action_id, "status": "created"}), 201
+    action_obj = add_proposed_action(data)
+    return jsonify({"uuid": action_obj["uuid"], "status": "created"}), 201
 
 @app.route('/actions/<action_id>', methods=['PUT'])
 def update_action(action_id):
@@ -299,7 +303,10 @@ def get_todos():
                 if func:
                     # Execute the wrapper to get the proposal
                     proposal = func(**call.args)
-                    proposed_actions.append(proposal)
+                    action_obj = add_proposed_action(proposal)
+                    proposed_actions.append(action_obj)
+        
+        context["Todos"] = proposed_actions
 
 
     except Exception as e:
