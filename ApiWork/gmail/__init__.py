@@ -7,7 +7,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from utils import SCOPES
+from ApiWork.utils import SCOPES
 
 def get_services():
     """Returns the Gmail service."""
@@ -22,7 +22,7 @@ def get_services():
             creds.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file(
-                "API work/credentials.json", SCOPES
+                "ApiWork/credentials.json", SCOPES
             )
             creds = flow.run_local_server(port=0)
         # Save the credentials for the next run
@@ -49,12 +49,12 @@ def read_emails(gmail_service, query=None, max_results=10):
         list: List of email dictionaries with id, subject, sender, snippet.
     """
     try:
-        results = service.users().messages().list(userId='me', q=query, maxResults=max_results).execute()
+        results = gmail_service.users().messages().list(userId='me', q=query, maxResults=max_results).execute()
         messages = results.get('messages', [])
         
         email_data = []
         for msg in messages:
-            msg_detail = service.users().messages().get(userId='me', id=msg['id']).execute()
+            msg_detail = gmail_service.users().messages().get(userId='me', id=msg['id']).execute()
             payload = msg_detail.get('payload', {})
             headers = payload.get('headers', [])
             

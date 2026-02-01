@@ -10,21 +10,16 @@ parse post request, which is structured like so:
 
 from flask import Flask, jsonify, request, render_template
 from google import genai
-from pydantic import BaseModel
-from typing import List, Dict, Any
+from google.genai import types
+from pydantic import BaseModel, Field
+from typing import List, Dict, Any, Optional
 import os
-import sys
 import uuid
-import json
 import datetime
 from dotenv import load_dotenv
+from ApiWork import gcal, gmail, gpeople, jira_slack
 
-sys.path.append(os.path.abspath("API work"))
-import gcal
-import gmail
-import gpeople
-
-load_dotenv()
+load_dotenv(override=True)
 API_KEY = os.getenv("API_KEY")
 
 # create a Flask server
@@ -38,10 +33,116 @@ PROPOSED_ACTIONS: Dict[str, Any] = {}
 calendar_service = gcal.get_calendar_service()
 gmail_service = gmail.get_services()
 people_service = gpeople.get_services()
+jira_client = jira_slack.get_jira_client()
+slack_client = jira_slack.get_slack_client()
+# --- Structured Inputs (Pydantic Models) ---
 
-# TODO: consider adding more attributes if requested
-class ToDoList(BaseModel):
-    todo_items: List[str]
+class CreateCalendarEventInput(BaseModel):
+    summary: str = Field(description="The title of the event")
+    start_time: str = Field(description="Start time in ISO 8601 format (YYYY-MM-DDTHH:MM:SS)")
+    end_time: str = Field(description="End time in ISO 8601 format (YYYY-MM-DDTHH:MM:SS)")
+    location: Optional[str] = Field(default=None, description="Location of the event")
+    description: Optional[str] = Field(default=None, description="Description of the event")
+    attendees: Optional[List[str]] = Field(default=None, description="List of attendee email addresses")
+
+class UpdateCalendarEventInput(BaseModel):
+    event_id: str = Field(description="The ID of the event to update")
+    summary: Optional[str] = Field(default=None, description="The new title of the event")
+    start_time: Optional[str] = Field(default=None, description="New start time in ISO 8601 format")
+    end_time: Optional[str] = Field(default=None, description="New end time in ISO 8601 format")
+    location: Optional[str] = Field(default=None, description="New location")
+    description: Optional[str] = Field(default=None, description="New description")
+    attendees: Optional[List[str]] = Field(default=None, description="New list of attendee email addresses")
+
+class DeleteCalendarEventInput(BaseModel):
+    event_id: str = Field(description="The ID of the event to delete")
+
+class SendEmailInput(BaseModel):
+    recipient: str = Field(description="Email address of the recipient")
+    subject: str = Field(description="Subject of the email")
+    body: str = Field(description="Body content of the email")
+
+class CreateJiraIssueInput(BaseModel):
+    summary: str = Field(description="Summary of the issue")
+    description: str = Field(description="Description of the issue")
+
+class UpdateJiraIssueInput(BaseModel):
+    issue_id: str = Field(description="The ID of the issue to update")
+    summary: Optional[str] = Field(default=None, description="The new summary of the issue")
+    description: Optional[str] = Field(default=None, description="The new description of the issue")
+
+# --- Tool Wrappers ---
+
+def list_calendar_events_tool(time_min: str = None, time_max: str = None, max_results: int = 10, query: str = None):
+    """
+    List calendar events to check availability or existing events.
+    """
+    return gcal.list_events(calendar_service, time_min, time_max, max_results, query)
+
+def read_emails_tool(query: str = None, max_results: int = 10):
+    """
+    Read emails to find relevant information.
+    """
+    return gmail.read_emails(gmail_service, query, max_results)
+
+def get_contacts_tool(query: str = None):
+    """
+    Get contacts to find email addresses.
+    """
+    return gpeople.get_contacts(people_service, query)
+
+def create_calendar_event_tool(summary: str, start_time: str, end_time: str, location: str = None, description: str = None, attendees: list[str] = None):
+    """
+    Propose creating a calendar event.
+    """
+    body = {
+        "summary": summary,
+        "start": {"dateTime": start_time, "timeZone": "America/Detroit"},
+        "end": {"dateTime": end_time, "timeZone": "America/Detroit"},
+    }
+    if location: body["location"] = location
+    if description: body["description"] = description
+    if attendees: body["attendees"] = [{"email": email} for email in attendees]
+    
+    return gcal.propose_create_event(body)
+
+def update_calendar_event_tool(event_id: str, summary: str = None, start_time: str = None, end_time: str = None, location: str = None, description: str = None, attendees: list[str] = None):
+    """
+    Propose updating a calendar event.
+    """
+    body = {}
+    if summary: body["summary"] = summary
+    if start_time: body["start"] = {"dateTime": start_time, "timeZone": "America/Detroit"}
+    if end_time: body["end"] = {"dateTime": end_time, "timeZone": "America/Detroit"}
+    if location: body["location"] = location
+    if description: body["description"] = description
+    if attendees: body["attendees"] = [{"email": email} for email in attendees]
+    
+    return gcal.propose_update_event(calendar_service, event_id, body)
+
+def delete_calendar_event_tool(event_id: str):
+    """
+    Propose deleting a calendar event.
+    """
+    return gcal.propose_delete_event(calendar_service, event_id)
+
+def send_email_tool(recipient: str, subject: str, body: str):
+    """
+    Propose sending an email.
+    """
+    return gmail.propose_send_email(recipient, subject, body)
+
+def create_jira_issue_tool(summary: str, description: str):
+    """
+    Propose creating a Jira issue.
+    """
+    return jira_slack.propose_create_jira_issue(summary, description)
+
+def send_slack_message_tool(message: str):
+    """
+    Propose sending a Slack message.
+    """
+    return jira_slack.propose_send_slack_message(message)
 
 def set_error(context, error_message):
     context["Status"] = 400
@@ -53,6 +154,22 @@ def index():
     return render_template('index.html')
 
 # --- Action Management Endpoints ---
+
+def add_proposed_action(data):
+    action_id = str(uuid.uuid4())
+    action_obj = {
+        "uuid": action_id,
+        "data": data,
+        "status": "pending",
+        "created_at": str(datetime.datetime.now()) if 'datetime' in globals() else None
+    }
+    
+    if data and 'original' in data:
+        action_obj['existing_data'] = data['original']
+
+    PROPOSED_ACTIONS[action_id] = action_obj
+    print(f"Action proposed: {action_id}")
+    return action_obj
 
 @app.route('/actions', methods=['GET'])
 def get_actions():
@@ -69,20 +186,8 @@ def create_action():
     if not data:
         return jsonify({"error": "No data provided"}), 400
     
-    action_id = str(uuid.uuid4())
-    action_obj = {
-        "uuid": action_id,
-        "data": data,
-        "status": "pending",
-        "created_at": str(datetime.datetime.now()) if 'datetime' in globals() else None
-    }
-    
-    if data and 'original' in data:
-        action_obj['existing_data'] = data['original']
-
-    PROPOSED_ACTIONS[action_id] = action_obj
-    print(f"Action proposed: {action_id}")
-    return jsonify({"uuid": action_id, "status": "created"}), 201
+    action_obj = add_proposed_action(data)
+    return jsonify({"uuid": action_obj["uuid"], "status": "created"}), 201
 
 @app.route('/actions/<action_id>', methods=['PUT'])
 def update_action(action_id):
@@ -131,6 +236,14 @@ def execute_action(action_id):
             email_body = action_data.get('body')
             result = gmail.execute_send_email(gmail_service, email_body)
         
+        elif action_type == 'create_jira_issue':
+            print(f"Executing Jira action {action_id}: {action_data}")
+            result = jira_slack.execute_create_jira_issue(jira_client, action_data)
+
+        elif action_type == 'send_slack_message':
+            print(f"Executing Slack action {action_id}: {action_data}")
+            result = jira_slack.execute_send_slack_message(slack_client, action_data)
+
         else:
             return jsonify({"error": f"Unknown action type: {action_type}"}), 400
 
@@ -145,15 +258,140 @@ def execute_action(action_id):
 
 # --- Existing Endpoints ---
 
-@app.route('/GetTodos', methods=["GET", "POST"])
+def process_attention_item(client, tools, transcript_text, index, target_message):
+    """
+    Process a single attention item with its own chat session.
+    """
+    target_content = target_message.get('content', '')
+    today_date = datetime.datetime.now().strftime("%Y-%m-%d")
+    
+    prompt = f'''
+    You are a helpful assistant that can manage calendar events and emails.
+    
+    Here is the full conversation transcript:
+    {transcript_text}
+    
+    Focus specifically on the message at index {index}: "Speaker {target_message.get('speaker', 'Unknown')}: {target_content}".
+    This message (and its surrounding context) indicates that an action needs to be taken (e.g. creating a calendar event, sending an email).
+    
+    Be aware of the times that users give for action items. They may be relative to today's date, {today_date}.
+    
+    First, analyze the context around this message to understand the specific user need.
+    If you need more information (e.g. checking calendar availability, finding an email address, or looking up an email), use the following tools:
+    - list_calendar_events_tool
+    - read_emails_tool
+    - get_contacts_tool
+    
+    Then, propose the necessary action(s) using:
+    - create_calendar_event_tool
+    - update_calendar_event_tool
+    - delete_calendar_event_tool
+    - send_email_tool
+    - create_jira_issue_tool
+    - send_slack_message_tool
+    
+    CRITICAL: You MUST propose at least one action for this attention item.
+
+    If you are missing information (like an email address), SEARCH for it using get_contacts_tool or read_emails_tool.
+    If you still cannot find it after searching, use a placeholder like 'INSERT_EMAIL_HERE' or 'TBD' and PROPOSE THE ACTION ANYWAY.
+    DO NOT stop to ask the user for information.
+    '''
+    
+    # Create a chat session
+    chat = client.chats.create(
+        model="gemini-2.5-flash",
+        config=types.GenerateContentConfig(
+            tools=tools,
+            tool_config=types.ToolConfig(
+                function_calling_config=types.FunctionCallingConfig(
+                    mode="AUTO"
+                )
+            ),
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                disable=True
+            )
+        )
+    )
+
+    # Send initial message
+    response = chat.send_message(prompt)
+
+    proposed_actions = []
+    
+    # Manual loop for function calling
+    max_turns = 10
+    for _ in range(max_turns):
+        if not response.function_calls:
+            break
+            
+        print(f"Gemini requested function calls for index {index}: {response.function_calls}")
+        
+        function_responses = []
+        for call in response.function_calls:
+            tool_map = {
+                "list_calendar_events_tool": list_calendar_events_tool,
+                "read_emails_tool": read_emails_tool,
+                "get_contacts_tool": get_contacts_tool,
+                "create_calendar_event_tool": create_calendar_event_tool,
+                "update_calendar_event_tool": update_calendar_event_tool,
+                "delete_calendar_event_tool": delete_calendar_event_tool,
+                "send_email_tool": send_email_tool,
+                "create_jira_issue_tool": create_jira_issue_tool,
+                "send_slack_message_tool": send_slack_message_tool
+            }
+            
+            func = tool_map.get(call.name)
+            if func:
+                print(f"Executing tool: {call.name} with args: {call.args}")
+                try:
+                    # Execute the tool
+                    result = func(**call.args)
+                    
+                    # If it's a proposal tool, register the action
+                    if call.name in ["create_calendar_event_tool", "update_calendar_event_tool", "delete_calendar_event_tool", "send_email_tool", "create_jira_issue_tool", "send_slack_message_tool"]:
+                        action_obj = add_proposed_action(result)
+                        proposed_actions.append(action_obj)
+                        # Return the action object (or just the result) to the model
+                        function_responses.append(types.Part(
+                            function_response=types.FunctionResponse(
+                                name=call.name,
+                                response={"result": result}
+                            )
+                        ))
+                    else:
+                        # Read tool, just return result
+                        function_responses.append(types.Part(
+                            function_response=types.FunctionResponse(
+                                name=call.name,
+                                response={"result": result}
+                            )
+                        ))
+                except Exception as tool_error:
+                    print(f"Error executing tool {call.name}: {tool_error}")
+                    function_responses.append(types.Part(
+                        function_response=types.FunctionResponse(
+                            name=call.name,
+                            response={"error": str(tool_error)}
+                        )
+                    ))
+        
+        # Send function responses back to the model
+        if function_responses:
+            print(f"Sending function responses back to Gemini for index {index}")
+            response = chat.send_message(function_responses)
+            print(f"Gemini response after function execution for index {index}: {response}")
+        else:
+            break
+            
+    return proposed_actions
+
+@app.route('/GetTodos', methods=["POST"])
 def get_todos():
     print("Received request")
     data = request.get_json(force=False, silent=False)
     context = {
         "Status": 200,
         "Error": "",
-        # list of strings
-        "Todos": []
     }
 
     # process the POST request data
@@ -165,41 +403,46 @@ def get_todos():
     messages = data['messages']
 
     if not indices or not messages or indices[-1] >= len(messages):
+        print(indices, messages)
         set_error(context, "Messages or indices contain invalid content")
         return jsonify(**context)
     
     # process messages and output it, for the time being just return the list of messages that are relevant
-    # TODO: create new API key through GEMINI studio
-    # client = genai.Client(api_key=API_KEY)
-    # response = ""
-    # # NOTE: we use structured outputs. Docs: https://ai.google.dev/gemini-api/docs/structured-output?example=recipe
-    # try:
-    #     highlighted_messages = [messages[index] for index in indices]
-    #     bulleted_list = '\n'.join(["- " + substr for substr in highlighted_messages])
-    #     prompt = f"Based on the bullet points I've provided below, construct a TODO list: \n{bulleted_list}"
-    #     response = client.models.generate_content(
-    #         # TODO: choose a model
-    #         model="gemini-2.0-flash",
-    #         contents=prompt,
-    #         config={
-    #             "response_mime_type": "application/json",
-    #             "response_json_schema": ToDoList.model_json_schema(),
-    #         },
-    #     )
-    # except Exception as e:
-    #     set_error("Gemini error, likely the token limits have been exceeded")
-    #     return jsonify(**context)
-    # if not response:
-    #     set_error("No response received from Gemini")
-    #     return jsonify(**context)
+    client = genai.Client(api_key=API_KEY)
 
-    # TODO: do something with the formatted response output (that is a dictionary)
-    # todo_items is just a list of strings
-    # todo_items = response['todo_items']
+    tools = [
+        list_calendar_events_tool,
+        read_emails_tool,
+        get_contacts_tool,
+        create_calendar_event_tool,
+        update_calendar_event_tool,
+        delete_calendar_event_tool,
+        send_email_tool,
+        create_jira_issue_tool,
+        send_slack_message_tool
+    ]
+    
+    # Full transcript context
+    transcript_text = "Full Conversation Transcript:\n" + '\n'.join([f"[{i}] Speaker {msg.get('speaker', 'Unknown')}: {msg.get('content', '')}" for i, msg in enumerate(messages)])
+    print(transcript_text)
+    
+    try:
+        all_proposed_actions = []
+        
+        for index in indices:
+            if index >= len(messages): continue
+            
+            target_message = messages[index]
+            print(f"Processing attention index {index}...")
+            
+            actions = process_attention_item(client, tools, transcript_text, index, target_message)
+            all_proposed_actions.extend(actions)
+        
+        context["Todos"] = all_proposed_actions
 
-    # TODO: do something with the todo items with the agent
-    todo_items = ["temporary", "fix", "this"]
-    context["Todos"] = todo_items
+    except Exception as error:
+        set_error(context, f"Error: {error}")
+        return jsonify(**context)
 
     return jsonify(**context)
 

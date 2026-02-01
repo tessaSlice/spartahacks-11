@@ -3,12 +3,7 @@ import datetime
 import sys
 import os
 import random
-
-# Add API Work to path
-sys.path.append(os.path.abspath("API work"))
-import gmail
-import gcal
-import gpeople
+from ApiWork import gmail, gcal, gpeople
 
 # Define the endpoint
 URL = "http://localhost:8080/actions"
