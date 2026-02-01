@@ -265,9 +265,10 @@ def get_todos():
         delete_calendar_event_tool,
         send_email_tool
     ]
-
+    today_date = datetime.datetime.now().strftime("%Y-%m-%d")
     context_text = "Conversation context:\n" + '\n'.join([f"Speaker {msg.get('speaker', 'Unknown')}: {msg.get('content', '')}" for msg in messages])
-
+    print(context_text)
+    
     try:        
         prompt = '''
         You are a helpful assistant that can manage calendar events and emails.
@@ -285,6 +286,8 @@ def get_todos():
         - send_email_tool
         
         The attention indices are the indices where a user indicated that the conversation context around that index is relevant to the user's needs.
+
+        Be aware of the times that users give for action items. They may be relative to today's date, {today_date}.
         
         CRITICAL: You MUST ALWAYS propose at least one action (create/update/delete event or send email).
         If you are missing information (like an email address), SEARCH for it using get_contacts_tool or read_emails_tool.
