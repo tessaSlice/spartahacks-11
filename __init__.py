@@ -63,6 +63,24 @@ class SendEmailInput(BaseModel):
 
 # --- Tool Wrappers ---
 
+def list_calendar_events_tool(time_min: str = None, time_max: str = None, max_results: int = 10, query: str = None):
+    """
+    List calendar events to check availability or existing events.
+    """
+    return gcal.list_events(calendar_service, time_min, time_max, max_results, query)
+
+def read_emails_tool(query: str = None, max_results: int = 10):
+    """
+    Read emails to find relevant information.
+    """
+    return gmail.read_emails(gmail_service, query, max_results)
+
+def get_contacts_tool(query: str = None):
+    """
+    Get contacts to find email addresses.
+    """
+    return gpeople.get_contacts(people_service, query)
+
 def create_calendar_event_tool(summary: str, start_time: str, end_time: str, location: str = None, description: str = None, attendees: list[str] = None):
     """
     Propose creating a calendar event.
@@ -239,6 +257,9 @@ def get_todos():
     client = genai.Client(api_key=API_KEY)
 
     tools = [
+        list_calendar_events_tool,
+        read_emails_tool,
+        get_contacts_tool,
         create_calendar_event_tool,
         update_calendar_event_tool,
         delete_calendar_event_tool,
@@ -249,60 +270,112 @@ def get_todos():
 
     try:        
         prompt = '''
-        You are a helpful assistant that can 
-        - create, update, delete calendar events
-        - send emails
-        You are given a conversation context and a list of attention indices.
-        You need to create a list of proposed actions based on the conversation context and the attention indices.
-        The attention indices are the indices where a user indicated that the conversation context around that index is relevant to the user's needs.
+        You are a helpful assistant that can manage calendar events and emails.
         
-        Solve the user's problems, outputting only the following tool calls:
+        First, analyze the conversation context to understand the user's needs.
+        If you need more information (e.g. checking calendar availability, finding an email address, or looking up an email), use the following tools:
+        - list_calendar_events_tool
+        - read_emails_tool
+        - get_contacts_tool
+        
+        Once you have the necessary information, propose the final actions using:
         - create_calendar_event_tool
         - update_calendar_event_tool
         - delete_calendar_event_tool
         - send_email_tool
-        - get_contacts_tool
-        The tool calls are to be returned in the form of a list of dictionaries.
-
-        se the following conversation context to generate the tool calls:
-        {context_text}
-
+        
+        The attention indices are the indices where a user indicated that the conversation context around that index is relevant to the user's needs.
+        
+        CRITICAL: You MUST ALWAYS propose at least one action (create/update/delete event or send email).
+        If you are missing information (like an email address), SEARCH for it using get_contacts_tool or read_emails_tool.
+        If you still cannot find it after searching, use a placeholder like 'INSERT_EMAIL_HERE' or 'TBD' and PROPOSE THE ACTION ANYWAY.
+        DO NOT stop to ask the user for information.
         '''
-        contents=[
-            prompt
-        ]
-
-        response = client.models.generate_content(
-            model="gemini-2.5-pro",
-            contents=f"{prompt}, and here's the {context_text}",
+        
+        # Create a chat session
+        chat = client.chats.create(
+            model="gemini-2.5-flash",
             config=types.GenerateContentConfig(
                 tools=tools,
                 tool_config=types.ToolConfig(
                     function_calling_config=types.FunctionCallingConfig(
                         mode="AUTO"
                     )
+                ),
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                    disable=True
                 )
             )
         )
 
-        proposed_actions = []
+        # Send initial message
+        response = chat.send_message(f"{prompt}, and here's the {context_text}")
 
-        # Handle tool calls
-        print(f"Full Gemini Response: {response}")
+        proposed_actions = []
         
-        history = getattr(response, 'automatic_function_calling_history', [])
-        if history:
-            for content in history:
-                if hasattr(content, 'parts') and content.parts:
-                    for part in content.parts:
-                        # Check for function_response (result of tool execution)
-                        if hasattr(part, 'function_response') and part.function_response:
-                            # The response attribute typically holds the return value dict
-                            resp = part.function_response.response
-                            if resp and 'result' in resp:
-                                result = resp['result']
-                                action_obj = add_proposed_action(result)
-                                proposed_actions.append(action_obj)
+        # Manual loop for function calling
+        max_turns = 10
+        for _ in range(max_turns):
+            if not response.function_calls:
+                break
+                
+            print(f"Gemini requested function calls: {response.function_calls}")
+            
+            function_responses = []
+            for call in response.function_calls:
+                tool_map = {
+                    "list_calendar_events_tool": list_calendar_events_tool,
+                    "read_emails_tool": read_emails_tool,
+                    "get_contacts_tool": get_contacts_tool,
+                    "create_calendar_event_tool": create_calendar_event_tool,
+                    "update_calendar_event_tool": update_calendar_event_tool,
+                    "delete_calendar_event_tool": delete_calendar_event_tool,
+                    "send_email_tool": send_email_tool
+                }
+                
+                func = tool_map.get(call.name)
+                if func:
+                    print(f"Executing tool: {call.name} with args: {call.args}")
+                    try:
+                        # Execute the tool
+                        result = func(**call.args)
+                        
+                        # If it's a proposal tool, register the action
+                        if call.name in ["create_calendar_event_tool", "update_calendar_event_tool", "delete_calendar_event_tool", "send_email_tool"]:
+                            action_obj = add_proposed_action(result)
+                            proposed_actions.append(action_obj)
+                            # Return the action object (or just the result) to the model
+                            # The model needs to know the action was proposed/created
+                            function_responses.append(types.Part(
+                                function_response=types.FunctionResponse(
+                                    name=call.name,
+                                    response={"result": result}
+                                )
+                            ))
+                        else:
+                            # Read tool, just return result
+                            function_responses.append(types.Part(
+                                function_response=types.FunctionResponse(
+                                    name=call.name,
+                                    response={"result": result}
+                                )
+                            ))
+                    except Exception as tool_error:
+                        print(f"Error executing tool {call.name}: {tool_error}")
+                        function_responses.append(types.Part(
+                            function_response=types.FunctionResponse(
+                                name=call.name,
+                                response={"error": str(tool_error)}
+                            )
+                        ))
+            
+            # Send function responses back to the model
+            if function_responses:
+                print(f"Sending function responses back to Gemini: {function_responses}")
+                response = chat.send_message(function_responses)
+                print(f"Gemini response after function execution: {response}")
+            else:
+                break
         
         context["Todos"] = proposed_actions
 

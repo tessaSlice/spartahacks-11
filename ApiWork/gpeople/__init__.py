@@ -36,9 +36,13 @@ def get_services():
         print(f"An error occurred: {error}")
         return None
 
-def get_contacts(people_service):
+def get_contacts(people_service, query=None):
     """
     Gets contacts and recommended recipients (other contacts).
+    
+    Args:
+        people_service: The People API service instance.
+        query (str): Optional search query to filter contacts.
     
     Returns:
         list: List of contact dictionaries with name, email, type.
@@ -49,7 +53,7 @@ def get_contacts(people_service):
         # Get 'connections' (my contacts)
         results = people_service.people().connections().list(
             resourceName='people/me',
-            pageSize=10,
+            pageSize=100,
             personFields='names,emailAddresses'
         ).execute()
         connections = results.get('connections', [])
@@ -58,15 +62,28 @@ def get_contacts(people_service):
             names = person.get('names', [])
             emails = person.get('emailAddresses', [])
             if names and emails:
-                contacts.append({
-                    'name': names[0].get('displayName'),
-                    'email': emails[0].get('value'),
-                    'type': 'contact'
-                })
+                name = names[0].get('displayName')
+                email = emails[0].get('value')
+                
+                # Filter if query is provided
+                if query:
+                    if query.lower() in name.lower() or query.lower() in email.lower():
+                        contacts.append({
+                            'name': name,
+                            'email': email,
+                            'type': 'contact'
+                        })
+                else:
+                    contacts.append({
+                        'name': name,
+                        'email': email,
+                        'type': 'contact'
+                    })
 
         # Get 'other contacts' (frequently contacted)
+        # Note: searchContacts is better but requires different setup, so we filter locally for now
         other_results = people_service.otherContacts().list(
-            pageSize=10,
+            pageSize=100,
             readMask='names,emailAddresses'
         ).execute()
         other_contacts = other_results.get('otherContacts', [])
@@ -76,11 +93,22 @@ def get_contacts(people_service):
             emails = person.get('emailAddresses', [])
             if emails:
                  name = names[0].get('displayName') if names else 'Unknown'
-                 contacts.append({
-                    'name': name,
-                    'email': emails[0].get('value'),
-                    'type': 'other'
-                })
+                 email = emails[0].get('value')
+                 
+                 # Filter if query is provided
+                 if query:
+                     if query.lower() in name.lower() or query.lower() in email.lower():
+                        contacts.append({
+                            'name': name,
+                            'email': email,
+                            'type': 'other'
+                        })
+                 else:
+                     contacts.append({
+                        'name': name,
+                        'email': email,
+                        'type': 'other'
+                    })
                 
         return contacts
     except HttpError as error:

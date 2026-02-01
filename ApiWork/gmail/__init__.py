@@ -49,12 +49,12 @@ def read_emails(gmail_service, query=None, max_results=10):
         list: List of email dictionaries with id, subject, sender, snippet.
     """
     try:
-        results = service.users().messages().list(userId='me', q=query, maxResults=max_results).execute()
+        results = gmail_service.users().messages().list(userId='me', q=query, maxResults=max_results).execute()
         messages = results.get('messages', [])
         
         email_data = []
         for msg in messages:
-            msg_detail = service.users().messages().get(userId='me', id=msg['id']).execute()
+            msg_detail = gmail_service.users().messages().get(userId='me', id=msg['id']).execute()
             payload = msg_detail.get('payload', {})
             headers = payload.get('headers', [])
             

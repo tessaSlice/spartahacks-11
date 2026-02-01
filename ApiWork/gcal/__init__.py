@@ -96,7 +96,7 @@ def execute_delete_event(service, data):
     service.events().delete(calendarId='primary', eventId=event_id).execute()
     return {"id": event_id, "status": "deleted"}
 
-def list_events(service, time_min=None, time_max=None, max_results=10):
+def list_events(service, time_min=None, time_max=None, max_results=10, query=None):
     """
     Returns a list of events within the specified time range.
     Defaults to upcoming 10 events if no range specified.
@@ -110,7 +110,7 @@ def list_events(service, time_min=None, time_max=None, max_results=10):
     if isinstance(time_max, datetime.datetime):
         time_max = time_max.isoformat()
         
-    print(f"Fetching events from {time_min} to {time_max if time_max else 'Future'}")
+    print(f"Fetching events from {time_min} to {time_max if time_max else 'Future'} with query: {query}")
     
     events_result = (
         service.events()
@@ -121,6 +121,7 @@ def list_events(service, time_min=None, time_max=None, max_results=10):
             maxResults=max_results,
             singleEvents=True,
             orderBy="startTime",
+            q=query
         )
         .execute()
     )

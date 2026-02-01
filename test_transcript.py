@@ -23,7 +23,7 @@ payload = {
     },
     {
       "speaker" : 2,
-      "content" : "Make a calendar event for a meeting with John Doe on April 1st at 10:00 AM"
+      "content" : "Make a calendar event for a meeting with Grant Wang on April 1st at 10:00 AM"
     },
     {
       "content" : "Attention",
@@ -34,7 +34,7 @@ payload = {
       "speaker" : 2
     },
     {
-      "content" : " Also send an email to John Doe right?",
+      "content" : " Also send an email to Grant right?",
       "speaker" : 1
     },
     {
