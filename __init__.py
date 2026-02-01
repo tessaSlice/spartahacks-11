@@ -14,16 +14,10 @@ from google.genai import types
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 import os
-import sys
 import uuid
-import json
 import datetime
 from dotenv import load_dotenv
-
-sys.path.append(os.path.abspath("API work"))
-import gcal
-import gmail
-import gpeople
+from ApiWork import gcal, gmail, gpeople
 
 load_dotenv(override=True)
 API_KEY = os.getenv("API_KEY")
@@ -269,14 +263,9 @@ def get_todos():
         '''
         context_text = "Conversation context:\n" + '\n'.join([f"- {msg.get('content', '')}" for msg in messages])
 
-        contents=[
-            prompt,
-            context_text
-        ]
-
         response = client.models.generate_content(
             model="gemini-2.5-flash",
-            contents=contents,
+            contents=f"{prompt}, and here's the {context_text}",
             config=types.GenerateContentConfig(
                 tools=tools,
                 tool_config=types.ToolConfig(
@@ -288,6 +277,9 @@ def get_todos():
         )
 
         proposed_actions = []
+        print(f"API model response is: {response}")
+        print(f"API response candidates is: {response.candidates}")
+        print(f"API response function calls are: {response.function_calls}")
         
         # Handle tool calls
         if response.function_calls:

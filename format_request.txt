@@ -1,0 +1,26 @@
+# NOTE: did not end up using the -k flag
+# do NOT use HTTPS, just use HTTP
+
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d "{ \"messages\": [ \
+        { \"speaker\": 2, \"content\": \"I mean, I guess I'm not really enforcing it, but given that it'll be, like, it—\" }, \
+        { \"speaker\": 2, \"content\": \" Yeah, it's too funny.\" }, \
+        { \"speaker\": 1, \"content\": \" Yeah, it kind of has to, yeah.\" }, \
+        { \"speaker\": 0, \"content\": \"Attention\" } \
+      ], \
+      \"attention_indices\": [3], \
+      \"session_id\": \"808DE96A-249B-414F-BF1B-8ABE394467F0\" }" \
+  http://127.0.0.1:8080/GetTodos
+
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d "{ \"messages\": [ \
+        { \"speaker\": 2, \"content\": \"I mean, I guess I'm not really enforcing it, but given that it'll be, like, it—\" }, \
+        { \"speaker\": 2, \"content\": \" Yeah, it's too funny.\" }, \
+        { \"speaker\": 1, \"content\": \" Yeah, it kind of has to, yeah.\" }, \
+        { \"speaker\": 0, \"content\": \"Attention\" } \
+      ], \
+      \"attention_indices\": [3], \
+      \"session_id\": \"808DE96A-249B-414F-BF1B-8ABE394467F0\" }" \
+  http://unsuited-nonlitigiously-dani.ngrok-free.dev:8080/GetTodos

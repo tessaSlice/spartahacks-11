@@ -7,7 +7,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from utils import SCOPES
+from ApiWork.utils import SCOPES
 
 def get_services():
     """Returns the Gmail service."""
@@ -22,7 +22,7 @@ def get_services():
             creds.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file(
-                "API work/credentials.json", SCOPES
+                "ApiWork/credentials.json", SCOPES
             )
             creds = flow.run_local_server(port=0)
         # Save the credentials for the next run
