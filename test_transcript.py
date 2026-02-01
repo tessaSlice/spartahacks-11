@@ -6,8 +6,6 @@ url = "http://localhost:8080/GetTodos"
 payload = {
   "attention_indices" : [
     4,
-    9,
-    14
   ],
   "session_id" : "8109B5DA-6621-4ECE-9CBD-81189FD64A4C",
   "messages" : [
@@ -32,48 +30,16 @@ payload = {
       "speaker" : 0
     },
     {
-      "content" : "w the official, like, game works.",
+      "content" : "Yeah I really need that calendar event created.",
       "speaker" : 2
     },
     {
-      "content" : " No.",
+      "content" : " Also send an email to John Doe right?",
       "speaker" : 1
     },
     {
       "speaker" : 2,
       "content" : " Yeah."
-    },
-    {
-      "speaker" : 1,
-      "content" : "Uh, I don't know. They, like, c they, like, sped up the gam"
-    },
-    {
-      "content" : "Attention",
-      "speaker" : 0
-    },
-    {
-      "speaker" : 1,
-      "content" : " Uh, I don't know. They, like, they, like, sped up the game in mobile games, like, uh,"
-    },
-    {
-      "speaker" : 1,
-      "content" : " this, this, uh, this magazine ramps up really quickly."
-    },
-    {
-      "content" : " I have to make sure.",
-      "speaker" : 1
-    },
-    {
-      "content" : "No, the problem with the",
-      "speaker" : 1
-    },
-    {
-      "speaker" : 0,
-      "content" : "Attention"
-    },
-    {
-      "content" : " No, the problem with the, uh, fucking water, but the, the problem with these desktop things is they don't have a magazine in it, so they last game for a few weeks, like, the, the AI just kind of, like, put you to put it in front of you, just, like, mounts a mega blaster and just one-shots all the time.",
-      "speaker" : 1
     }
   ]
 }

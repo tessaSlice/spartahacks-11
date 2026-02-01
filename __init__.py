@@ -245,6 +245,8 @@ def get_todos():
         send_email_tool
     ]
 
+    context_text = "Conversation context:\n" + '\n'.join([f"Speaker {msg.get('speaker', 'Unknown')}: {msg.get('content', '')}" for msg in messages])
+
     try:        
         prompt = '''
         You are a helpful assistant that can 
@@ -259,12 +261,19 @@ def get_todos():
         - update_calendar_event_tool
         - delete_calendar_event_tool
         - send_email_tool
+        - get_contacts_tool
         The tool calls are to be returned in the form of a list of dictionaries.
+
+        se the following conversation context to generate the tool calls:
+        {context_text}
+
         '''
-        context_text = "Conversation context:\n" + '\n'.join([f"- {msg.get('content', '')}" for msg in messages])
+        contents=[
+            prompt
+        ]
 
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.5-pro",
             contents=f"{prompt}, and here's the {context_text}",
             config=types.GenerateContentConfig(
                 tools=tools,
@@ -277,26 +286,23 @@ def get_todos():
         )
 
         proposed_actions = []
-        print(f"API model response is: {response}")
-        print(f"API response candidates is: {response.candidates}")
-        print(f"API response function calls are: {response.function_calls}")
-        
+
         # Handle tool calls
-        if response.function_calls:
-            for call in response.function_calls:
-                tool_map = {
-                    "create_calendar_event_tool": create_calendar_event_tool,
-                    "update_calendar_event_tool": update_calendar_event_tool,
-                    "delete_calendar_event_tool": delete_calendar_event_tool,
-                    "send_email_tool": send_email_tool
-                }
-                
-                func = tool_map.get(call.name)
-                if func:
-                    # Execute the wrapper to get the proposal
-                    proposal = func(**call.args)
-                    action_obj = add_proposed_action(proposal)
-                    proposed_actions.append(action_obj)
+        print(f"Full Gemini Response: {response}")
+        
+        history = getattr(response, 'automatic_function_calling_history', [])
+        if history:
+            for content in history:
+                if hasattr(content, 'parts') and content.parts:
+                    for part in content.parts:
+                        # Check for function_response (result of tool execution)
+                        if hasattr(part, 'function_response') and part.function_response:
+                            # The response attribute typically holds the return value dict
+                            resp = part.function_response.response
+                            if resp and 'result' in resp:
+                                result = resp['result']
+                                action_obj = add_proposed_action(result)
+                                proposed_actions.append(action_obj)
         
         context["Todos"] = proposed_actions
 
