@@ -42,13 +42,8 @@ def propose_email_draft():
     subject = "Hello from AI Agent"
     body = f"Hi {selected_contact.get('name', 'Friend')},\n\nThis is a drafted email proposed by the AI agent. It was randomly targeted to you from the user's contacts.\n\nBest,\nAI Agent"
 
-    draft_structure = gmail.create_draft_structure(recipient_email, subject, body)
-    
-    # Wrap in our action format
-    action_proposal = {
-        "action": "send_email",
-        "body": draft_structure
-    }
+    # Use new proposal function
+    action_proposal = gmail.propose_send_email(recipient_email, subject, body)
 
     print("Proposing SEND_EMAIL action...")
     send_proposal(action_proposal)
@@ -73,10 +68,8 @@ def propose_calendar_event():
         },
     }
     
-    create_proposal = {
-        "action": "create",
-        "body": create_body
-    }
+    # Use new proposal function
+    create_proposal = gcal.propose_create_event(create_body)
     send_proposal(create_proposal)
 
     # 2. Find an existing event to Update/Delete
@@ -88,8 +81,7 @@ def propose_calendar_event():
         print("No existing events found. Skipping Update/Delete proposals.")
         return
 
-    # Pick the first one (hopefully it's one we created or is safe to modify)
-    # Ideally, we'd filter for "AI Proposed" events, but for this test we'll just take the first one.
+    # Pick the first one
     target_event = events[0]
     event_id = target_event['id']
     print(f"Found event: {target_event.get('summary')} (ID: {event_id})")
@@ -99,23 +91,17 @@ def propose_calendar_event():
     update_body = {
         "summary": f"{target_event.get('summary')} (UPDATED)",
         "description": "This description was added via AI proposal.",
-        # Keep existing times if possible, or just send what we have. 
-        # For patch, we only need to send what changes, but let's be safe.
-        # Actually, for this test let's just update summary/description.
     }
-    update_proposal = {
-        "action": "update",
-        "id": event_id,
-        "body": update_body
-    }
+    
+    # Use new proposal function (fetches original automatically)
+    update_proposal = gcal.propose_update_event(calendar_service, event_id, update_body)
     send_proposal(update_proposal)
 
     # 4. Propose DELETE on this event
     print("\n--- 3. Proposing DELETE Action ---")
-    delete_proposal = {
-        "action": "delete",
-        "id": event_id
-    }
+    
+    # Use new proposal function (fetches original automatically)
+    delete_proposal = gcal.propose_delete_event(calendar_service, event_id)
     send_proposal(delete_proposal)
 
 if __name__ == "__main__":

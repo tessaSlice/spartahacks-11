@@ -76,6 +76,10 @@ def create_action():
         "status": "pending",
         "created_at": str(datetime.datetime.now()) if 'datetime' in globals() else None
     }
+    
+    if data and 'original' in data:
+        action_obj['existing_data'] = data['original']
+
     PROPOSED_ACTIONS[action_id] = action_obj
     print(f"Action proposed: {action_id}")
     return jsonify({"uuid": action_id, "status": "created"}), 201
@@ -125,7 +129,7 @@ def execute_action(action_id):
             print(f"Executing Email action {action_id}: {action_data}")
             # The body of the action contains the draft structure
             email_body = action_data.get('body')
-            result = gmail.send_email(gmail_service, email_body)
+            result = gmail.execute_send_email(gmail_service, email_body)
         
         else:
             return jsonify({"error": f"Unknown action type: {action_type}"}), 400

@@ -38,22 +38,60 @@ def get_calendar_service():
         print(f"An error occurred: {error}")
         return None
 
-def create_event(service, event_body):
-    """Creates a new calendar event."""
-    print(f"Creating event: {event_body.get('summary', 'Unknown')}")
-    return service.events().insert(calendarId='primary', body=event_body).execute()
+def get_event(service, event_id):
+    """Retrieves a single event by ID."""
+    try:
+        event = service.events().get(calendarId='primary', eventId=event_id).execute()
+        return event
+    except HttpError as error:
+        if error.resp.status == 404:
+            return None
+        print(f"An error occurred fetching event {event_id}: {error}")
+        return None
 
-def update_event(service, event_id, event_body):
+def propose_create_event(event_body):
+    return {
+        "action": "create",
+        "body": event_body
+    }
+
+def propose_update_event(service, event_id, event_body):
+    original_event = get_event(service, event_id)
+    return {
+        "action": "update",
+        "id": event_id,
+        "body": event_body,
+        "original": original_event
+    }
+
+def propose_delete_event(service, event_id):
+    original_event = get_event(service, event_id)
+    return {
+        "action": "delete",
+        "id": event_id,
+        "original": original_event
+    }
+
+def execute_create_event(service, data):
+    """Creates a new calendar event."""
+    body = data.get('body')
+    print(f"Creating event: {body.get('summary', 'Unknown')}")
+    return service.events().insert(calendarId='primary', body=body).execute()
+
+def execute_update_event(service, data):
     """Updates an existing calendar event."""
+    event_id = data.get('id')
+    body = data.get('body')
     print(f"Updating event ID: {event_id}")
     return service.events().patch(
         calendarId='primary', 
         eventId=event_id, 
-        body=event_body
+        body=body
     ).execute()
 
-def delete_event(service, event_id):
+def execute_delete_event(service, data):
     """Deletes a calendar event."""
+    event_id = data.get('id')
     print(f"Deleting event ID: {event_id}")
     service.events().delete(calendarId='primary', eventId=event_id).execute()
     return {"id": event_id, "status": "deleted"}
@@ -98,15 +136,12 @@ def execute_action(service, action_data):
     action = action_data.get("action")
     
     if action == "create":
-        return create_event(service, action_data.get('body'))
+        return execute_create_event(service, action_data)
         
     elif action == "update":
-        return update_event(service, action_data.get('id'), action_data.get('body'))
+        return execute_update_event(service, action_data)
         
     elif action == "delete":
-        return delete_event(service, action_data.get('id'))
+        return execute_delete_event(service, action_data)
         
     return None
-
-# Alias for backward compatibility if needed, but we will update __init__.py
-execute_event_alternation = execute_action

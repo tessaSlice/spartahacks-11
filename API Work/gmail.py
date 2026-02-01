@@ -75,18 +75,21 @@ def read_emails(gmail_service, query=None, max_results=10):
         print(f"An error occurred reading emails: {error}")
         return []
 
-def create_draft_structure(recipient, subject, body):
+def propose_send_email(recipient, subject, body):
     """
     Creates a draft structure for the frontend/agent to review.
-    Returns a dict that can be passed to send_email.
+    Returns the full action proposal dictionary.
     """
     return {
-        "recipient": recipient,
-        "subject": subject,
-        "body": body
+        "action": "send_email",
+        "body": {
+            "recipient": recipient,
+            "subject": subject,
+            "body": body
+        }
     }
 
-def send_email(service, draft_structure):
+def execute_send_email(service, draft_structure):
     """
     Sends an email based on the draft structure.
     
