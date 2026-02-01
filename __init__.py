@@ -10,6 +10,7 @@ parse post request, which is structured like so:
 
 from flask import Flask, jsonify, request, render_template
 from google import genai
+from google.genai import types
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 import os
@@ -215,7 +216,7 @@ def execute_action(action_id):
 
 # --- Existing Endpoints ---
 
-@app.route('/GetTodos', methods=["GET", "POST"])
+@app.route('/GetTodos', methods=["POST"])
 def get_todos():
     print("Received request")
     data = request.get_json(force=False, silent=False)
@@ -238,13 +239,14 @@ def get_todos():
     
     # process messages and output it, for the time being just return the list of messages that are relevant
     client = genai.Client(api_key=API_KEY)
-    
-    tools = [
+
+    tools = types.Tool(function_declarations=[
         create_calendar_event_tool,
         update_calendar_event_tool,
         delete_calendar_event_tool,
         send_email_tool
-    ]
+    ])
+    config = types.GenerateContentConfig(tools=[tools])
 
     try:
         highlighted_messages = [messages[index] for index in indices]
@@ -269,8 +271,7 @@ def get_todos():
         response = client.models.generate_content(
             model="gemini-2.0-flash",
             contents=context_text,
-            tools=tools,
-            config={"tool_config": {"function_calling_config": {"mode": "AUTO"}}}
+            config=config,
         )
 
         proposed_actions = []
