@@ -97,8 +97,8 @@ def create_calendar_event_tool(summary: str, start_time: str, end_time: str, loc
     """
     body = {
         "summary": summary,
-        "start": {"dateTime": start_time},
-        "end": {"dateTime": end_time},
+        "start": {"dateTime": start_time, "timeZone": "America/Detroit"},
+        "end": {"dateTime": end_time, "timeZone": "America/Detroit"},
     }
     if location: body["location"] = location
     if description: body["description"] = description
@@ -112,8 +112,8 @@ def update_calendar_event_tool(event_id: str, summary: str = None, start_time: s
     """
     body = {}
     if summary: body["summary"] = summary
-    if start_time: body["start"] = {"dateTime": start_time}
-    if end_time: body["end"] = {"dateTime": end_time}
+    if start_time: body["start"] = {"dateTime": start_time, "timeZone": "America/Detroit"}
+    if end_time: body["end"] = {"dateTime": end_time, "timeZone": "America/Detroit"}
     if location: body["location"] = location
     if description: body["description"] = description
     if attendees: body["attendees"] = [{"email": email} for email in attendees]
