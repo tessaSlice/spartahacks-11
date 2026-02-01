@@ -7,27 +7,18 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-# we want to CRUD
-# Create events
-# Read events
-# Update events
-# Delete events
-
-# If modifying these scopes, delete the file token.json.
-SCOPES = ["https://www.googleapis.com/auth/calendar"]
-
+from utils import SCOPES
 
 def get_calendar_service():
     """Shows basic usage of the Google Calendar API.
     Returns the service object.
     """
     creds = None
-    # The file token.json stores the user's access and refresh tokens, and is
-    # created automatically when the authorization flow completes for the first
-    # time.
     if os.path.exists("token.json"):
         creds = Credentials.from_authorized_user_file("token.json", SCOPES)
-    # If there are no (valid) credentials available, let the user log in.
+        if not set(SCOPES).issubset(set(creds.scopes or [])):
+            print("Existing token lacks required scopes, re-running OAuth flow...")
+            creds = None
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
@@ -101,15 +92,25 @@ def execute_event_alternation(service, alternation_def):
     action = alternation_def.get("action")
     
     if action == "create":
-        print(f"Creating event: {alternation_def['body'].get('summary', 'Unknown')}")
-        return service.events().insert(calendarId='primary', body=alternation_def['body']).execute()
+        body = alternation_def.get('body')
+        print(f"Creating event: {body.get('summary', 'Unknown')}")
+
+        return service.events().insert(calendarId='primary', body=body).execute()
         
     elif action == "update":
+        body = alternation_def.get('body')
         print(f"Updating event ID: {alternation_def['id']}")
+        
+        # Validate body (Update might be partial, but usually follows resource semantics)
+        # For patch, we might not need strict validation of all fields, but let's check basics if provided
+        if 'start' in body or 'end' in body:
+             # If one is provided, usually both should be checked or at least valid
+             pass
+
         return service.events().patch(
             calendarId='primary', 
             eventId=alternation_def['id'], 
-            body=alternation_def['body']
+            body=body
         ).execute()
         
     elif action == "delete":

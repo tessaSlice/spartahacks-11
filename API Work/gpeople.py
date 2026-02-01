@@ -7,18 +7,16 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-# Scopes for Gmail and People API
-SCOPES = [
-    "https://www.googleapis.com/auth/contacts.readonly",
-    "https://www.googleapis.com/auth/contacts.other.readonly"
-]
+from utils import SCOPES
 
 def get_services():
     """Returns the People services."""
     creds = None
     if os.path.exists("token.json"):
         creds = Credentials.from_authorized_user_file("token.json", SCOPES)
-    # If there are no (valid) credentials available, let the user log in.
+        if not set(SCOPES).issubset(set(creds.scopes or [])):
+            print("Existing token lacks required scopes, re-running OAuth flow...")
+            creds = None
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
@@ -46,6 +44,7 @@ def get_contacts(people_service):
         list: List of contact dictionaries with name, email, type.
     """
     contacts = []
+    
     try:
         # Get 'connections' (my contacts)
         results = people_service.people().connections().list(

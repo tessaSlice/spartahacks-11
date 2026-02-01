@@ -5,10 +5,10 @@ import os
 import random
 
 # Add API Work to path
-sys.path.append(os.path.abspath("API Work"))
+sys.path.append(os.path.abspath("API work"))
 import gmail
-import calendar
-import contacts
+import gcal
+import gpeople
 
 # Define the endpoint
 URL = "http://localhost:8080/actions"
@@ -16,15 +16,15 @@ URL = "http://localhost:8080/actions"
 def propose_email_draft():
     print("Authenticating with Gmail/People API...")
     gmail_service = gmail.get_services()
-    people_service = contacts.get_services()
+    people_service = gpeople.get_services()
 
-    contacts = contacts.get_contacts(people_service)
+    people = gpeople.get_contacts(people_service)
     
-    if not contacts:
+    if not people:
         print("No contacts found. Using a dummy contact.")
         selected_contact = {"name": "Test User", "email": "test@example.com"}
     else:
-        selected_contact = random.choice(contacts)
+        selected_contact = random.choice(people)
         print(f"Randomly selected contact: {selected_contact.get('name')} ({selected_contact.get('email')})")
 
     recipient_email = selected_contact.get('email')
@@ -51,7 +51,7 @@ def propose_email_draft():
 
 def propose_calendar_event():
     print("Authenticating with Calendar API...")
-    calendar_service = calendar.get_calendar_service()
+    calendar_service = gcal.get_calendar_service()
 
     # Example 1: Create a new event
     create_event_data = {
@@ -70,10 +70,7 @@ def propose_calendar_event():
         }
     }
 
-    action_proposal = {
-        "action": "create",
-        "body": create_event_data
-    }
+    action_proposal = create_event_data
 
     print("Proposing CREATE_EVENT action...")
     try:
@@ -87,3 +84,4 @@ def propose_calendar_event():
 
 if __name__ == "__main__":
     propose_email_draft()
+    propose_calendar_event()

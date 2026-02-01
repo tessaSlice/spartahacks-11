@@ -20,9 +20,9 @@ import datetime
 from dotenv import load_dotenv
 
 sys.path.append(os.path.abspath("API work"))
-import calendar
+import gcal
 import gmail
-import contacts
+import gpeople
 
 load_dotenv()
 API_KEY = os.getenv("API_KEY")
@@ -35,9 +35,9 @@ app = Flask(__name__)
 PROPOSED_ACTIONS: Dict[str, Any] = {}
 
 # Initialize Services
-calendar_service = calendar.get_calendar_service()
+calendar_service = gcal.get_calendar_service()
 gmail_service = gmail.get_services()
-people_service = contacts.get_services()
+people_service = gpeople.get_services()
 
 # TODO: consider adding more attributes if requested
 class ToDoList(BaseModel):
@@ -119,12 +119,13 @@ def execute_action(action_id):
         result = None
         if action_type in ['create', 'update', 'delete']:
             print(f"Executing Calendar action {action_id}: {action_data}")
-            result = calendar.execute_event_alternation(calendar_service, action_data)
+            result = gcal.execute_event_alternation(calendar_service, action_data)
         
         elif action_type == 'send_email':
             print(f"Executing Email action {action_id}: {action_data}")
             # The body of the action contains the draft structure
-            result = gmail.send_email(gmail_service, action_data)
+            email_body = action_data.get('body')
+            result = gmail.send_email(gmail_service, email_body)
         
         else:
             return jsonify({"error": f"Unknown action type: {action_type}"}), 400
