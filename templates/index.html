@@ -7,9 +7,13 @@
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.5s; }
+        .fade-enter-from, .fade-leave-to { opacity: 0; }
+    </style>
 </head>
 <body class="bg-gray-100 min-h-screen p-8">
-    <div id="app" class="max-w-4xl mx-auto">
+    <div id="app" class="max-w-5xl mx-auto">
         <header class="mb-8 flex justify-between items-center">
             <div>
                 <h1 class="text-3xl font-bold text-gray-800">Action Approval</h1>
@@ -34,7 +38,8 @@
                  :class="{
                     'border-green-500': action.data.action === 'create',
                     'border-blue-500': action.data.action === 'update',
-                    'border-red-500': action.data.action === 'delete'
+                    'border-red-500': action.data.action === 'delete',
+                    'border-purple-500': action.data.action === 'send_email'
                  }">
                 
                 <!-- Header -->
@@ -44,69 +49,199 @@
                               :class="{
                                 'bg-green-100 text-green-800': action.data.action === 'create',
                                 'bg-blue-100 text-blue-800': action.data.action === 'update',
-                                'bg-red-100 text-red-800': action.data.action === 'delete'
+                                'bg-red-100 text-red-800': action.data.action === 'delete',
+                                'bg-purple-100 text-purple-800': action.data.action === 'send_email'
                               }">
-                            ${ action.data.action }
+                            ${ action.data.action.replace('_', ' ') }
                         </span>
-                        <span class="text-sm text-gray-500 font-mono">${ action.uuid }</span>
+                        <span class="text-sm text-gray-500 font-mono">${ action.uuid.substring(0, 8) }...</span>
                     </div>
-                    <button @click="deleteAction(action.uuid)" class="text-gray-400 hover:text-red-500 transition">
-                        <i class="fas fa-times"></i>
-                    </button>
+                    <div class="flex items-center gap-2">
+                        <button @click="action.showRaw = !action.showRaw" class="text-xs text-gray-500 hover:text-gray-700 underline">
+                            ${ action.showRaw ? 'Show UI' : 'Show JSON' }
+                        </button>
+                        <button @click="deleteAction(action.uuid)" class="text-gray-400 hover:text-red-500 transition ml-2">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Body -->
                 <div class="p-4">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <!-- Existing Data (Left) -->
+                    <!-- Raw JSON View -->
+                    <div v-if="action.showRaw" class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div v-if="action.existing_data || (action.data && action.data.original)" class="mb-4">
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Existing Event</label>
-                            <div class="w-full h-48 font-mono text-xs p-3 border rounded bg-gray-100 overflow-auto whitespace-pre">
-${ JSON.stringify(action.existing_data || action.data.original, null, 2) }
-                            </div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Existing Data</label>
+                            <div class="w-full h-64 font-mono text-xs p-3 border rounded bg-gray-100 overflow-auto whitespace-pre">${ JSON.stringify(action.existing_data || action.data.original, null, 2) }</div>
                         </div>
-                        <div v-else-if="['update', 'delete'].includes(action.data.action)" class="mb-4 flex items-center justify-center bg-gray-50 border rounded h-48">
-                             <p class="text-gray-400 text-sm italic">Event not found or new event</p>
-                        </div>
-
-                        <!-- Proposed Action (Right) -->
-                        <div class="mb-4" :class="{'col-span-2': !action.existing_data && !['update', 'delete'].includes(action.data.action)}">
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Proposed Action</label>
+                        <div class="mb-4" :class="{'col-span-2': !action.existing_data && !action.data.original}">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Proposed Action Data</label>
                             <textarea 
                                 v-model="action.jsonString" 
                                 @input="updateJson(action)"
-                                class="w-full h-48 font-mono text-sm p-3 border rounded bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                class="w-full h-64 font-mono text-sm p-3 border rounded bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                                 :class="{'border-red-300': action.jsonError}"></textarea>
                             <p v-if="action.jsonError" class="text-red-500 text-xs mt-1">${ action.jsonError }</p>
+                        </div>
+                    </div>
+
+                    <!-- Human Readable UI -->
+                    <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        
+                        <!-- LEFT COLUMN: Context / Existing -->
+                        <div>
+                            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
+                                ${ ['update', 'delete'].includes(action.data.action) ? 'Current State' : 'Context' }
+                            </h3>
+                            
+                            <!-- Calendar Existing Event Card -->
+                            <div v-if="action.data.original && ['update', 'delete'].includes(action.data.action)" 
+                                 class="bg-gray-50 rounded border p-4 text-sm text-gray-600">
+                                <div class="font-bold text-gray-800 text-lg mb-1">${ action.data.original.summary || '(No Title)' }</div>
+                                <div class="flex items-center gap-2 mb-1">
+                                    <i class="far fa-clock text-gray-400 w-4"></i>
+                                    <span>${ formatEventTime(action.data.original) }</span>
+                                </div>
+                                <div v-if="action.data.original.location" class="flex items-center gap-2 mb-1">
+                                    <i class="fas fa-map-marker-alt text-gray-400 w-4"></i>
+                                    <span>${ action.data.original.location }</span>
+                                </div>
+                                <div v-if="action.data.original.description" class="mt-2 p-2 bg-gray-100 rounded text-xs whitespace-pre-wrap">
+                                    ${ action.data.original.description }
+                                </div>
+                            </div>
+                            
+                            <!-- Empty State for Create/Email -->
+                            <div v-else class="h-full flex flex-col items-center justify-center text-gray-400 border-2 border-dashed border-gray-200 rounded-lg p-6">
+                                <i class="fas fa-plus-circle text-3xl mb-2 opacity-20"></i>
+                                <span class="text-sm">New Item</span>
+                            </div>
+                        </div>
+
+                        <!-- RIGHT COLUMN: Proposed Changes -->
+                        <div>
+                            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Proposed Changes</h3>
+                            
+                            <!-- CALENDAR FORM -->
+                            <div v-if="['create', 'update', 'delete'].includes(action.data.action)" class="bg-white border rounded-lg p-4 shadow-sm relative">
+                                <div v-if="action.data.action === 'delete'" class="absolute inset-0 bg-red-50 bg-opacity-90 flex items-center justify-center z-10 rounded-lg">
+                                    <div class="text-center text-red-600">
+                                        <i class="fas fa-trash-alt text-3xl mb-2"></i>
+                                        <p class="font-bold">Deleting Event</p>
+                                    </div>
+                                </div>
+
+                                <div class="space-y-4">
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-500 mb-1">Event Title</label>
+                                        <input type="text" 
+                                               v-model="action.data.body.summary" 
+                                               @input="updateFromUi(action)"
+                                               class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none font-medium text-gray-800">
+                                    </div>
+                                    
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label class="block text-xs font-medium text-gray-500 mb-1">Start</label>
+                                            <input type="datetime-local" 
+                                                   :value="toDatetimeLocal(action.data.body.start?.dateTime)"
+                                                   @input="updateDateTime(action, 'start', $event.target.value)"
+                                                   class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-medium text-gray-500 mb-1">End</label>
+                                            <input type="datetime-local" 
+                                                   :value="toDatetimeLocal(action.data.body.end?.dateTime)"
+                                                   @input="updateDateTime(action, 'end', $event.target.value)"
+                                                   class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-500 mb-1">Location</label>
+                                        <div class="relative">
+                                            <i class="fas fa-map-marker-alt absolute left-3 top-2.5 text-gray-400"></i>
+                                            <input type="text" 
+                                                   v-model="action.data.body.location" 
+                                                   @input="updateFromUi(action)"
+                                                   class="w-full pl-8 p-2 border rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-500 mb-1">Description</label>
+                                        <textarea v-model="action.data.body.description" 
+                                                  @input="updateFromUi(action)"
+                                                  rows="3"
+                                                  class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"></textarea>
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-500 mb-1">Attendees (comma separated)</label>
+                                        <input type="text" 
+                                               :value="formatAttendees(action.data.body.attendees)"
+                                               @change="updateAttendees(action, $event.target.value)"
+                                               placeholder="email@example.com, ..."
+                                               class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- EMAIL FORM -->
+                            <div v-else-if="action.data.action === 'send_email'" class="bg-white border rounded-lg p-4 shadow-sm">
+                                <div class="space-y-4">
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-500 mb-1">To</label>
+                                        <div class="relative">
+                                            <i class="fas fa-envelope absolute left-3 top-2.5 text-gray-400"></i>
+                                            <input type="email" 
+                                                   v-model="action.data.body.recipient" 
+                                                   @input="updateFromUi(action)"
+                                                   class="w-full pl-8 p-2 border rounded text-sm focus:ring-2 focus:ring-purple-500 outline-none">
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-500 mb-1">Subject</label>
+                                        <input type="text" 
+                                               v-model="action.data.body.subject" 
+                                               @input="updateFromUi(action)"
+                                               class="w-full p-2 border rounded font-medium focus:ring-2 focus:ring-purple-500 outline-none">
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-500 mb-1">Message Body</label>
+                                        <textarea v-model="action.data.body.body" 
+                                                  @input="updateFromUi(action)"
+                                                  rows="6"
+                                                  class="w-full p-3 border rounded text-sm focus:ring-2 focus:ring-purple-500 outline-none whitespace-pre-wrap font-sans"></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Fallback for unknown types -->
+                             <div v-else class="p-4 bg-yellow-50 text-yellow-800 rounded border border-yellow-200">
+                                Unknown action type. Please use "Show JSON" to edit.
+                             </div>
+
                         </div>
                     </div>
 
                     <!-- Execution Result Display -->
                     <div v-if="action.executionResult" class="mt-4 p-4 bg-gray-50 border-t">
                          <label class="block text-sm font-medium text-gray-700 mb-1">Execution Result</label>
-                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div v-if="action.executionResult.original">
-                                <span class="text-xs font-bold text-gray-500 uppercase">Original State</span>
-                                <div class="w-full h-32 font-mono text-xs p-2 border rounded bg-white overflow-auto whitespace-pre">
-${ JSON.stringify(action.executionResult.original, null, 2) }
-                                </div>
-                            </div>
-                            <div>
-                                <span class="text-xs font-bold text-gray-500 uppercase">New State / Result</span>
-                                <div class="w-full h-32 font-mono text-xs p-2 border rounded bg-white overflow-auto whitespace-pre">
-${ JSON.stringify(action.executionResult.result || action.executionResult, null, 2) }
-                                </div>
-                            </div>
+                         <div class="w-full p-3 bg-white border rounded text-sm font-mono overflow-auto max-h-48">
+                            ${ JSON.stringify(action.executionResult.result || action.executionResult, null, 2) }
                          </div>
                     </div>
 
-                    <div class="flex justify-end gap-3 mt-4" v-if="!action.executionResult">
+                    <div class="flex justify-end gap-3 mt-6 pt-4 border-t" v-if="!action.executionResult">
                         <button @click="executeAction(action)" 
                                 :disabled="!!action.jsonError || action.executing"
-                                class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition">
+                                class="px-6 py-2 bg-blue-600 text-white font-medium rounded shadow-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition transform active:scale-95">
                             <i v-if="action.executing" class="fas fa-circle-notch fa-spin"></i>
-                            <i v-else class="fas fa-play"></i>
-                            Execute
+                            <i v-else class="fas fa-paper-plane"></i>
+                            ${ action.data.action === 'send_email' ? 'Send Email' : 'Confirm Action' }
                         </button>
                     </div>
                 </div>
@@ -146,12 +281,16 @@ ${ JSON.stringify(action.executionResult.result || action.executionResult, null,
                         for (const [uuid, serverAction] of newActionsMap) {
                             const existing = this.actions.find(a => a.uuid === uuid);
                             if (!existing) {
+                                // Ensure body structure exists for binding
+                                if (!serverAction.data.body) serverAction.data.body = {};
+                                
                                 this.actions.push({
                                     ...serverAction,
                                     jsonString: JSON.stringify(serverAction.data, null, 2),
                                     jsonError: null,
                                     executing: false,
-                                    executionResult: null // Store result locally to show before removing
+                                    executionResult: null,
+                                    showRaw: false
                                 });
                             }
                         }
@@ -168,6 +307,10 @@ ${ JSON.stringify(action.executionResult.result || action.executionResult, null,
                     } catch (e) {
                         action.jsonError = e.message;
                     }
+                },
+                updateFromUi(action) {
+                    action.jsonString = JSON.stringify(action.data, null, 2);
+                    this.saveAction(action);
                 },
                 async saveAction(action) {
                     if (action.jsonError) return;
@@ -202,17 +345,9 @@ ${ JSON.stringify(action.executionResult.result || action.executionResult, null,
                         const result = await res.json();
                         
                         if (result.status === 'success') {
-                            // Instead of removing immediately, show the result
                             action.executionResult = result.result;
-                            alert('Action executed successfully!');
-                            
-                            // Optional: Remove after delay or let user dismiss
-                            // For now, we keep it in the list but maybe stop polling updates for it?
-                            // Or just remove it from the server list so it disappears on next poll?
-                            // The server code deletes it from PROPOSED_ACTIONS on success.
-                            // So on next poll it will disappear. 
-                            // To show the result, we should pause polling or handle it differently.
-                            this.polling = false; // Pause polling to let user see result
+                            // alert('Action executed successfully!'); // Less intrusive
+                            this.polling = false; 
                         } else {
                             alert('Error executing action: ' + result.message);
                         }
@@ -222,6 +357,36 @@ ${ JSON.stringify(action.executionResult.result || action.executionResult, null,
                     } finally {
                         action.executing = false;
                     }
+                },
+                // Helpers
+                toDatetimeLocal(iso) {
+                    if (!iso) return '';
+                    // Handle "2023-10-27T10:00:00-07:00" -> "2023-10-27T10:00"
+                    return iso.substring(0, 16);
+                },
+                updateDateTime(action, field, value) {
+                    if (!action.data.body[field]) action.data.body[field] = {};
+                    // Append seconds and maybe timezone if needed, but for now simple ISO
+                    action.data.body[field].dateTime = value + ':00';
+                    this.updateFromUi(action);
+                },
+                formatEventTime(event) {
+                    if (!event.start) return '';
+                    const start = event.start.dateTime || event.start.date;
+                    const end = event.end.dateTime || event.end.date;
+                    if (!start) return '';
+                    
+                    const d = new Date(start);
+                    return d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+                },
+                formatAttendees(attendees) {
+                    if (!attendees || !Array.isArray(attendees)) return '';
+                    return attendees.map(a => a.email).join(', ');
+                },
+                updateAttendees(action, value) {
+                    const emails = value.split(',').map(e => e.trim()).filter(e => e);
+                    action.data.body.attendees = emails.map(e => ({ email: e }));
+                    this.updateFromUi(action);
                 }
             }
         }).mount('#app')
