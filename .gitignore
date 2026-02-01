@@ -1,3 +1,4 @@
 *.pyc
 .env
-
+token.json
+API work/credentials.json
